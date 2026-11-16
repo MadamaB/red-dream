@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>THE RED DREAM</title>
+<meta name="description" content="THE RED DREAM — a journey through the unreal.">
+<meta name="theme-color" content="#0a0103">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;1,300&family=Inter+Tight:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:#0a0103;color:#e9c9c9;font:400 10px/1 'Inter Tight',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.gate{position:fixed;inset:0;z-index:10;display:grid;place-items:center;text-align:center;background:radial-gradient(70% 60% at 50% 55%,#2a0408,#070102 75%);transition:opacity 2.4s cubic-bezier(.16,1,.3,1),visibility 2.4s}
+.gate.is-gone{opacity:0;visibility:hidden}
+.gate__in{display:grid;gap:22px;justify-items:center}
+.gate h1{font:300 clamp(40px,7vw,104px)/.9 'Cormorant Garamond',Georgia,serif;letter-spacing:.14em;text-indent:.14em;color:#f2d6d4}
+.gate p{font:italic 300 clamp(16px,1.6vw,22px)/1.3 'Cormorant Garamond',Georgia,serif;color:#b98a8c}
+.gate button{margin-top:18px;font:500 10px/1 'Inter Tight',sans-serif;letter-spacing:.5em;text-indent:.5em;text-transform:uppercase;color:#f2d6d4;background:none;border:1px solid rgba(242,214,212,.35);border-radius:999px;padding:18px 30px;cursor:pointer;transition:border-color .5s,background .5s,color .5s}
+.gate button:hover,.gate button:focus-visible{border-color:#f2d6d4;background:rgba(242,214,212,.08);outline:none}
+.gate small{font:400 9px/1.6 'Inter Tight',sans-serif;letter-spacing:.3em;text-transform:uppercase;color:rgba(233,201,201,.35)}
+.snd{position:fixed;right:20px;bottom:18px;z-index:5;font:500 9px/1 'Inter Tight',sans-serif;letter-spacing:.38em;text-indent:.38em;text-transform:uppercase;color:#e9c9c9;background:rgba(10,1,3,.3);border:1px solid rgba(233,201,201,.25);border-radius:999px;padding:11px 15px;cursor:pointer;opacity:0;transition:opacity 2s;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.snd.is-on{opacity:.75}.snd:hover,.snd:focus-visible{opacity:1;outline:none;border-color:#e9c9c9}
+.prog{position:fixed;left:50%;bottom:24px;z-index:5;width:min(220px,40vw);height:1px;transform:translateX(-50%);background:rgba(233,201,201,.14);opacity:0;transition:opacity 2s}
+.prog.is-on{opacity:1}.prog i{position:absolute;left:0;top:0;bottom:0;width:0;background:rgba(242,214,212,.7)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.endglow{position:fixed;inset:0;z-index:4;pointer-events:none;opacity:0;background:radial-gradient(70% 60% at 50% 55%,#b0202c 0%,#5a0610 50%,#1a0204 100%)}
+.endtitle{position:fixed;inset:0;z-index:6;display:grid;place-items:center;pointer-events:none;opacity:0;text-align:center}
+.endtitle h2{font:300 clamp(40px,7vw,104px)/.9 'Cormorant Garamond',Georgia,serif;letter-spacing:.14em;text-indent:.14em;color:#f6dcda;text-shadow:0 0 40px rgba(255,120,120,.35);transform:scale(calc(.97 + var(--k,0) * .03))}
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="THE RED DREAM — scroll to drift forward; move the cursor to disturb the dream."></canvas>
+<div class="gate" id="gate"><div class="gate__in">
+  <h1>THE RED DREAM</h1>
+  <p>A journey through the unreal.</p>
+  <button id="enter">Enter the dream</button>
+  <small>sound on · headphones · let it carry you</small>
+</div></div>
+<div class="endtitle" id="endtitle" aria-hidden="true"><h2>THE RED DREAM</h2></div>
+<button class="snd" id="snd" aria-pressed="false">Sound off</button>
+<div class="prog" id="prog" aria-hidden="true"><i></i></div>
+<p class="sr" id="st" aria-live="polite"></p>
+
+<script type="importmap">
+{"imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { Reflector } from 'three/addons/objects/Reflector.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+
+const $ = s => document.querySelector(s);
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const LITE = location.search.includes('lite') || matchMedia('(pointer: coarse)').matches || (navigator.hardwareConcurrency || 8) <= 4;
+const lerp = (a, b, k) => a + (b - a) * k, clamp01 = x => Math.max(0, Math.min(1, x));
+const smooth = (a, b, x) => { const k = clamp01((x - a) / (b - a)); return k * k * (3 - 2 * k); };
+const now = () => performance.now() / 1000;
+let seed = 11; const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+
+/* ================================ THE DREAM'S MAP ================================
+   One continuous drift along -z. 0 → -86: THE DESCENT (crimson hall, chains, silk, a film of liquid on the floor, a lit opening).
+   -70 → -110: the chains melt into liquid strands, their drops become ripples, the hall dissolves.
+   -100 → -190: THE WHITE SWAN on an endless crimson lake. (Chapters III–V will continue beyond.) */
+const Z_OPEN = -86, Z_END = -408;
+
+/* ================================ RENDERER ================================ */
+const canvas = $('#c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: !LITE, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, LITE ? 1 : 1.75)); renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = .95;
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x0a0103);
+scene.fog = new THREE.FogExp2(0x1a0306, .032);
+const camera = new THREE.PerspectiveCamera(52, innerWidth / innerHeight, .05, 600);
+
+// what the metal reflects: a dark red room with a few soft lights
+{ const soft = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d'), g = x.createRadialGradient(64, 64, 0, 64, 64, 64);
+    g.addColorStop(0, '#fff'); g.addColorStop(.5, 'rgba(255,255,255,.7)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 128, 128); return new THREE.CanvasTexture(c); })();
+  const env = new THREE.Scene(); env.background = new THREE.Color(0x120204);
+  for (const [w, h, x, y, z, c, k] of [[20, 14, 0, 4, -20, 0xffd8d0, 1.6], [10, 24, -14, 6, 2, 0xff3040, 1.1], [10, 24, 14, 6, 2, 0xff3040, 1.1], [30, 6, 0, 18, 0, 0xffffff, .9], [16, 10, 0, -8, 14, 0x801018, .6]]){
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: soft, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, color: new THREE.Color(c).multiplyScalar(k), side: THREE.DoubleSide }));
+    m.position.set(x, y, z); m.lookAt(0, 0, 0); env.add(m); }
+  scene.environment = new THREE.PMREMGenerator(renderer).fromScene(env, .02).texture;
+  // the chains see a cooler world, so they read as silver against the red
+  const env2 = new THREE.Scene(); env2.background = new THREE.Color(0x0c0809);
+  for (const [w, h, x, y, z, k] of [[26, 10, 0, 14, -10, 2.4], [8, 30, -14, 4, 4, 1.4], [8, 30, 14, 4, -6, 1.1], [20, 8, 0, -6, 14, .5]]){ const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: soft, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, color: new THREE.Color(1, .96, .97).multiplyScalar(k), side: THREE.DoubleSide })); m.position.set(x, y, z); m.lookAt(0, 0, 0); env2.add(m); }
+  window.__silverEnv = new THREE.PMREMGenerator(renderer).fromScene(env2, .02).texture; }
+
+const NOISE = /* glsl */`
+float h21(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f); return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y); }
+float fbm(vec2 p){ float s = 0., a = .5; for (int i = 0; i < 4; i++){ s += a * vn(p); p *= 2.03; a *= .5; } return s; }`;
+
+/* ================================ THE LIQUID FLOOR → THE LAKE ================================
+   One mirror of liquid from the hall to the horizon: a thin film under the chains, then the still crimson lake. It reflects
+   everything, ripples where drops fall, where the swan swims and where the cursor touches. */
+const RIP = 12, ripples = Array.from({ length: RIP }, () => new THREE.Vector4(0, 0, -99, 0)); let ripI = 0;
+function ripple(x, z, amp = 1){ ripples[ripI].set(x, z, now(), amp); ripI = (ripI + 1) % RIP; if (typeof Sound !== 'undefined' && typeof camera !== 'undefined' && Math.abs(z - camera.position.z) < 45) Sound.ripple(Math.max(-1, Math.min(1, (x - camera.position.x) / 10)), Math.min(1, amp)); }
+const waterU = { uSunDir: { value: new THREE.Vector3(0, .3, -1) }, uSunCol: { value: new THREE.Color(1, .8, .8) }, uPal: { value: 0 }, uFogC: { value: new THREE.Color() }, uFogD: { value: .03 }, uT: { value: 0 }, uRip: { value: ripples }, uLake: { value: 0 }, uSwan: { value: new THREE.Vector3(0, 0, -150) }, uStretch: { value: 0 } };
+const WATER_FN = /* glsl */`
+uniform float uT, uLake, uStretch, uFogD, uPal; uniform vec4 uRip[${RIP}]; uniform vec3 uSwan, uFogC, uSunDir, uSunCol;
+${NOISE}
+vec2 slope(vec2 p){                                     // the surface: slow sheets of flow in the hall, almost still on the lake, plus every ripple
+  float still = mix(1., .9, uLake);
+  vec2 g = vec2(0.);
+  g += still * .5 * vec2(sin(p.x * .35 + uT * .4 + sin(p.y * .21)), cos(p.y * .28 - uT * .33 + sin(p.x * .17))) * .18;
+  g += still * .6 * (vec2(fbm(p * .4 + vec2(uT * .05, 0.)), fbm(p * .4 + vec2(3.1, uT * .04))) - .5);
+  for (int i = 0; i < ${RIP}; i++){ vec4 r = uRip[i]; float age = uT - r.z; if (age < 0. || age > 7.) continue;
+    vec2 d = p - r.xy; float dist = length(d), front = age * 1.6; float ring = sin((dist - front) * 5.5) * exp(-pow(dist - front, 2.) * 1.6) * exp(-age * .45) * r.w;
+    g += normalize(d + 1e-4) * ring * .55; }
+  g += (vec2(vn(p * 3.3 + vec2(uT * .21, 0.)), vn(p * 3.1 + vec2(7.3, uT * .17))) - .5) * .07 + (vec2(vn(p * 9. - uT * .3), vn(p * 8.7 + 4.)) - .5) * .025;   // micro ripples
+  return g; }`;
+const water = (() => {
+  if (LITE) { const m = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), new THREE.MeshPhysicalMaterial({ color: 0x1a0205, roughness: .08, metalness: .2, clearcoat: 1 })); m.rotation.x = -Math.PI / 2; m.position.set(0, 0, -150); scene.add(m); return m; }
+  const shader = { name: 'RedWater', uniforms: Object.assign({ color: { value: null }, tDiffuse: { value: null }, textureMatrix: { value: null } }, waterU),
+    vertexShader: `uniform mat4 textureMatrix; varying vec4 vUvR; varying vec3 vW; #include <common>
+      #include <logdepthbuf_pars_vertex>
+      void main(){ vUvR = textureMatrix * vec4(position, 1.); vW = (modelMatrix * vec4(position, 1.)).xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.);
+      #include <logdepthbuf_vertex>
+      }`.replace('#include <common>', '\n#include <common>\n'),
+    fragmentShader: `uniform vec3 color; uniform sampler2D tDiffuse; varying vec4 vUvR; varying vec3 vW;
+      ${WATER_FN}
+      #include <logdepthbuf_pars_fragment>
+      void main(){
+        #include <logdepthbuf_fragment>
+        vec2 g = slope(vW.xz);
+        vec4 uv = vUvR; uv.xy += g * mix(.028, .045, uLake) * uv.w;
+        // the swan's reflection stretches, slowly, unnaturally, as the dream loosens
+        float sw = exp(-pow(vW.x - uSwan.x, 2.) / 10.) * smoothstep(-40., 0., vW.z - uSwan.z) * (1. - smoothstep(0., 30., vW.z - uSwan.z - 4.));
+        uv.y += uStretch * sw * .35 * uv.w * (vW.z - uSwan.z) * .06;
+        float dist = length(cameraPosition - vW), br = (.0015 + dist * .00012) * uv.w;             // the further, the softer the reflection
+        vec3 refl = (texture2DProj(tDiffuse, uv).rgb * 2. + texture2DProj(tDiffuse, uv + vec4(br, 0., 0., 0.)).rgb + texture2DProj(tDiffuse, uv - vec4(br, 0., 0., 0.)).rgb + texture2DProj(tDiffuse, uv + vec4(0., br * 1.6, 0., 0.)).rgb + texture2DProj(tDiffuse, uv - vec4(0., br * 1.6, 0., 0.)).rgb) / 6.;
+        vec3 base = mix(mix(vec3(.05, .004, .008), vec3(.07, .004, .012), uLake), vec3(.62, .46, .5), uPal);
+        vec3 V = normalize(cameraPosition - vW), N = normalize(vec3(-g.x * .9, 1., -g.y * .9));
+        float cosT = clamp(dot(V, N), 0., 1.), F = .02 + .98 * pow(1. - cosT, 5.);
+        float fres = clamp(.42 + F * 1.25, 0., 1.);
+        vec3 R = reflect(-V, N); float sp = max(dot(R, normalize(uSunDir)), 0.);
+        vec3 glint = uSunCol * (pow(sp, 900.) * 6. + pow(sp, 60.) * .08);
+        vec3 c = mix(base, refl * mix(mix(vec3(1., .55, .6), vec3(.95, .62, .66), uLake), vec3(1.), uPal), fres * mix(.92, .8, uLake));
+        c += vec3(1., .88, .88) * pow(max(0., length(g) * 2.4 - .45), 2.5) * mix(.25, .6, uLake);         // silver lines on the crests
+        c += glint * (1. - uPal * .4);
+        float fd = length(cameraPosition - vW) * uFogD; c = mix(c, uFogC, 1. - exp(-fd * fd));
+        gl_FragColor = vec4(c, 1.);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }` };
+  const m = new Reflector(new THREE.PlaneGeometry(700, 700), { textureWidth: innerWidth * .6, textureHeight: innerHeight * .6, clipBias: .003, shader });
+  m.material.uniforms.uRip.value = ripples;
+  m.rotation.x = -Math.PI / 2; m.position.set(0, 0, -150); scene.add(m); return m; })();
+const WU = water.material.uniforms || waterU;
+
+/* ================================ CHAPTER I — THE DESCENT ================================ */
+const hall = new THREE.Group(); scene.add(hall);
+// dissolving materials: everything of the hall melts away, from its far end, as the dream moves on
+const dissolveU = { uDis: { value: 0 } };
+function dissolving(mat){ mat.onBeforeCompile = sh => { sh.uniforms.uDis = dissolveU.uDis;
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWd;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWd = (modelMatrix * vec4(transformed, 1.)).xyz;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uDis; varying vec3 vWd;\n' + NOISE)
+      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n float dn = fbm(vWd.xy * .35 + vWd.z * .07); if (dn < uDis * 1.3 - .15 + (vWd.z - (-90.)) * .004 * uDis) discard;'); };
+  mat.customProgramCacheKey = () => 'dis' + mat.type; return mat; }
+const lacquer = dissolving(new THREE.MeshPhysicalMaterial({ color: 0x2a0307, roughness: .3, clearcoat: .7, clearcoatRoughness: .2, sheen: .5, sheenColor: new THREE.Color(0x8a1020) }));
+// tall crimson panels either side, light bleeding through the gaps between them
+for (let i = 0; i < 14; i++) for (const sd of [-1, 1]){
+  const z = 2 - i * 6.4, w = 2.2 + rnd() * 1.4, p = new THREE.Mesh(new THREE.BoxGeometry(.8, 26, w), lacquer); p.position.set(sd * (8.2 + rnd() * .8), 13, z); hall.add(p);
+  if (i % 2 === 0){ const gl = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 24), new THREE.MeshBasicMaterial({ color: new THREE.Color(.55, .03, .05), transparent: true, opacity: .55, fog: true })); gl.position.set(sd * 9.6, 12, z - 3.2); gl.rotation.y = -sd * Math.PI / 2; hall.add(gl); } }
+// the far wall, with its arched opening onto light
+{ const s = new THREE.Shape(); s.moveTo(-30, 0); s.lineTo(30, 0); s.lineTo(30, 34); s.lineTo(-30, 34); s.lineTo(-30, 0);
+  const h = new THREE.Path(); h.moveTo(-2.6, 0); h.lineTo(2.6, 0); h.lineTo(2.6, 10); h.absarc(0, 10, 2.6, 0, Math.PI, false); h.lineTo(-2.6, 0); s.holes.push(h);
+  const wall = new THREE.Mesh(new THREE.ExtrudeGeometry(s, { depth: 1.2, bevelEnabled: false, curveSegments: 48 }), lacquer); wall.position.set(0, 0, Z_OPEN - .6); hall.add(wall); }
+const openLight = new THREE.PointLight(0xffc0b8, 160, 60, 1.4); openLight.position.set(0, 6, Z_OPEN - 8); scene.add(openLight);
+const glowTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 256; const x = c.getContext('2d'), g = x.createRadialGradient(128, 150, 0, 128, 150, 128);
+  g.addColorStop(0, 'rgba(255,240,236,1)'); g.addColorStop(.35, 'rgba(255,190,190,.65)'); g.addColorStop(1, 'rgba(255,120,130,0)'); x.fillStyle = g; x.fillRect(0, 0, 256, 256); return new THREE.CanvasTexture(c); })();
+const glowPlane = new THREE.Mesh(new THREE.PlaneGeometry(26, 30), new THREE.MeshBasicMaterial({ map: glowTex, color: new THREE.Color(1.5, .7, .7), transparent: true, opacity: .9, fog: false, depthWrite: false, blending: THREE.AdditiveBlending }));
+glowPlane.position.set(0, 9, Z_OPEN - 14); scene.add(glowPlane);
+const redKey = new THREE.SpotLight(0xff2a35, 900, 90, .6, .8, 1.3); redKey.position.set(0, 26, 0); redKey.target.position.set(0, 0, -40); scene.add(redKey, redKey.target);
+
+// chains: long chrome chains hanging from an invisible ceiling; each is a pendulum the cursor can disturb; near the opening they
+// melt into liquid strands whose drops fall and become ripples
+const chrome = new THREE.MeshPhysicalMaterial({ color: 0xf2eef0, metalness: 1, roughness: .08, envMap: window.__silverEnv, envMapIntensity: 1.6, clearcoat: .6 });
+const linkGeo = new THREE.TorusGeometry(1, .28, 8, 18);
+const chains = [];
+for (let i = 0; i < (LITE ? 18 : 30); i++){
+  const z = 3 - rnd() * 92, side = rnd() < .5 ? -1 : 1, x = side * (1.1 + Math.pow(rnd(), .7) * 6), len = 6 + rnd() * 10, size = .12 + Math.pow(rnd(), 2) * .26;
+  const pivot = new THREE.Group(); pivot.position.set(x, 17, z); scene.add(pivot);
+  const n = Math.floor(len / (size * 1.55)), im = new THREE.InstancedMesh(linkGeo, chrome, n), d = new THREE.Object3D();
+  for (let k = 0; k < n; k++){ d.position.set(0, -k * size * 1.55 - size, 0); d.rotation.set(0, k % 2 ? Math.PI / 2 : 0, Math.PI / 2); d.scale.set(size, size * .62, size); d.updateMatrix(); im.setMatrixAt(k, d.matrix); }
+  pivot.add(im);
+  // the liquid strand it becomes
+  const strand = new THREE.Mesh(new THREE.CylinderGeometry(size * .35, size * .5, len, 10, 1, true), chrome); strand.position.y = -len / 2; strand.scale.set(.001, 1, .001); pivot.add(strand);
+  const drop = new THREE.Mesh(new THREE.SphereGeometry(size * 1.2, 16, 12), chrome); drop.position.y = -len; drop.visible = false; pivot.add(drop);
+  chains.push({ pivot, im, strand, drop, x, z, len, size, ax: 0, az: 0, vx: 0, vz: 0, ph: rnd() * 6, melt: 0, dropT: rnd() * 3, side });
+}
+// silk: translucent red fabric moving slowly through the air — two long hangings, a swag above, a veil across the path that parts
+const silkU = { uT: { value: 0 } };
+function silk(w, h, seg, opacity, tone){ const g = new THREE.PlaneGeometry(w, h, seg, Math.round(seg * h / w));
+  const m = new THREE.MeshPhysicalMaterial({ color: tone, roughness: .45, sheen: 1, sheenRoughness: .35, sheenColor: new THREE.Color(0xff5060), transparent: true, opacity: opacity * .6, side: THREE.DoubleSide, depthWrite: false, emissive: 0x2a0106, emissiveIntensity: .35 });
+  const u = { uT: silkU.uT, uAmp: { value: 1 }, uPart: { value: 0 }, uSeed: { value: rnd() * 10 }, uStretch: { value: 0 } };
+  m.onBeforeCompile = sh => { Object.assign(sh.uniforms, u);
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uT, uAmp, uPart, uSeed, uStretch;\nvec3 silkP(vec3 p){ float hang = clamp(.5 - p.y / ' + h.toFixed(1) + ', 0., 1.);\n  p.z += (sin(p.x * .45 + uT * .5 + uSeed) * .9 + sin(p.y * .3 - uT * .37 + uSeed * 2.) * .6 + sin((p.x + p.y) * .9 + uT * .8) * .2) * uAmp * (.3 + hang);\n  p.x += sign(p.x) * uPart * (2. + hang * 6.) * smoothstep(0., 1.5, abs(p.x)); p.y -= uStretch * hang * 3.; return p; }')
+      .replace('#include <beginnormal_vertex>', 'vec3 sp = silkP(position), sa = silkP(position + vec3(.05, 0., 0.)), sb = silkP(position + vec3(0., .05, 0.)); vec3 objectNormal = normalize(cross(sa - sp, sb - sp));')
+      .replace('#include <begin_vertex>', 'vec3 transformed = sp;'); };
+  m.customProgramCacheKey = () => 'silk';
+  const mesh = new THREE.Mesh(g, m); mesh.userData.u = u; return mesh; }
+const silks = [];
+{ const a = silk(34, 18, 70, .5, 0x6a0612); a.position.set(-6.5, 12, -16); a.rotation.y = Math.PI / 2 + .1; scene.add(a); silks.push(a);
+  const b = silk(34, 18, 70, .45, 0x7a0814); b.position.set(6.8, 12.5, -40); b.rotation.y = -Math.PI / 2 - .08; scene.add(b); silks.push(b);
+  const sw = silk(26, 8, 60, .55, 0x8a0a18); sw.position.set(0, 16.5, -8); sw.rotation.x = -1.2; scene.add(sw); silks.push(sw);
+  const veil = silk(16, 16, 60, .38, 0x9a1020); veil.position.set(0, 8.5, -52); scene.add(veil); silks.push(veil); veil.userData.veil = true;
+  const ribbon = silk(40, 3, 120, .6, 0xa0101e); ribbon.position.set(0, 9, -28); ribbon.rotation.set(.3, .9, .5); scene.add(ribbon); silks.push(ribbon); }
+// low mist over the liquid
+const mists = [];
+for (const [y, o, z0, L] of [[.35, .22, -40, 120], [1.4, .12, -40, 120], [.5, .3, -150, 160], [2.2, .16, -150, 160], [5, .08, -150, 160]]){
+  const m = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: { uT: { value: 0 }, uO: { value: o }, uC: { value: new THREE.Color(1, .3, .32) } },
+    vertexShader: 'varying vec2 vUv; varying vec3 vW; void main(){ vUv = uv; vW = (modelMatrix * vec4(position, 1.)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vW, 1.); }',
+    fragmentShader: `uniform float uT, uO; uniform vec3 uC; varying vec2 vUv; varying vec3 vW; ${NOISE}
+      void main(){ vec2 q = vW.xz * .05 + vec2(uT * .012, uT * .008); float f = fbm(q) * .7 + fbm(q * 2.4 - uT * .01) * .3;
+        float edge = smoothstep(0., .15, vUv.x) * smoothstep(1., .85, vUv.x) * smoothstep(0., .1, vUv.y) * smoothstep(1., .9, vUv.y);
+        float a = smoothstep(.4, .85, f) * uO * edge; gl_FragColor = vec4(uC * a, a); }` });
+  const pl = new THREE.Mesh(new THREE.PlaneGeometry(90, L), m); pl.rotation.x = -Math.PI / 2; pl.position.set(0, y, z0); scene.add(pl); mists.push(m); }
+
+/* ================================ CHAPTER II — THE WHITE SWAN ================================ */
+const swan = new THREE.Group(); scene.add(swan);
+const feather = new THREE.MeshPhysicalMaterial({ color: 0xf4eeec, roughness: .62, sheen: 1, sheenRoughness: .5, sheenColor: new THREE.Color(0xffe8ea), clearcoat: .1, envMapIntensity: .6 });
+const swanBody = new THREE.Group(); swan.add(swanBody);
+{ const body = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 32), feather); body.scale.set(.85, .55, 1.45); body.position.y = .32; swanBody.add(body);
+  for (const sd of [-1, 1]){ const w = new THREE.Mesh(new THREE.SphereGeometry(1, 40, 24), feather); w.scale.set(.42, .4, 1.25); w.position.set(sd * .42, .64, -.15); w.rotation.set(-.25, sd * .12, sd * -.2); swanBody.add(w);
+    const arch = new THREE.Mesh(new THREE.SphereGeometry(1, 40, 24), feather); arch.scale.set(.32, .5, 1.05); arch.position.set(sd * .3, .95, -.45); arch.rotation.set(-.45, 0, sd * -.35); swanBody.add(arch); }
+  const tail = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), feather); tail.scale.set(.32, .2, .55); tail.position.set(0, .55, -1.35); tail.rotation.x = .45; swanBody.add(tail); }
+const neckMesh = new THREE.Mesh(new THREE.BufferGeometry(), feather); swan.add(neckMesh);
+const headG = new THREE.Group(); swan.add(headG);
+{ const head = new THREE.Mesh(new THREE.SphereGeometry(.2, 24, 16), feather); head.scale.set(.85, .9, 1.3); headG.add(head);
+  const beak = new THREE.Mesh(new THREE.ConeGeometry(.08, .48, 16), new THREE.MeshPhysicalMaterial({ color: 0xe0442c, roughness: .35, clearcoat: .6 })); beak.rotation.x = Math.PI / 2; beak.position.set(0, -.04, .37); headG.add(beak);
+  const mask = new THREE.Mesh(new THREE.SphereGeometry(.07, 12, 8), new THREE.MeshStandardMaterial({ color: 0x0a0505 })); mask.position.set(0, -.01, .16); mask.scale.set(1.6, 1, 1); headG.add(mask); }
+swan.scale.setScalar(1.05);
+const np = [0, 1, 2, 3, 4].map(() => new THREE.Vector3()), neckDir = new THREE.Vector3();
+function neckPose(t){ const a = Math.sin(t * .31) * .08, b = Math.sin(t * .23 + 1) * .05, dip = Math.pow(Math.max(0, Math.sin(t * .09 - 1.2)), 8);
+  np[0].set(0, .6, 1.05); np[1].set(a * .5, 1.3 - dip * .1, 1.25 + b * .5); np[2].set(a, 2.1 - dip * .7, .95 + b + dip * .5); np[3].set(a * 1.2, 2.55 - dip * 1.2, 1.05 + b + dip * .95); np[4].set(a * 1.25, 2.55 - dip * 1.5, 1.45 + b + dip * 1.15);
+  const g = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(np), 40, .15, 14); neckMesh.geometry.dispose(); neckMesh.geometry = g;
+  headG.position.copy(np[4]); neckDir.subVectors(np[4], np[3]).normalize(); headG.rotation.set(-Math.atan2(neckDir.y, Math.hypot(neckDir.x, neckDir.z)) * .7 + dip * .6, Math.atan2(neckDir.x, neckDir.z) * .5, 0); }
+neckPose(0);
+const swanLight = new THREE.PointLight(0xfff0ec, 110, 30, 1.5); scene.add(swanLight);
+let swanZ = -128, swanX = .6, wakeT = 0;
+
+/* ================================ CHAPTER III — THE INFINITE PASSAGE ================================
+   The swan's ripples rise out of the lake as frames, one after another, red to pink; space loses its logic — they swell,
+   lean and change scale; then they melt and the melt becomes silver ribbons. */
+const Z_PASS0 = -150, NFRAMES = LITE ? 26 : 40, FRAME_STEP = 3.55;
+const frameGeo = (() => { const s = new THREE.Shape(); s.moveTo(-5, 0); s.lineTo(5, 0); s.lineTo(5, 13); s.lineTo(-5, 13); s.lineTo(-5, 0);
+  const h = new THREE.Path(); h.moveTo(-3.5, 0); h.lineTo(3.5, 0); h.lineTo(3.5, 11.2); h.lineTo(-3.5, 11.2); h.lineTo(-3.5, 0); s.holes.push(h);
+  const g = new THREE.ExtrudeGeometry(s, { depth: 1, bevelEnabled: true, bevelThickness: .08, bevelSize: .08, bevelSegments: 3, steps: 1 }); g.translate(0, 0, -.5); return g; })();
+const frames = [];
+for (let i = 0; i < NFRAMES; i++){
+  const k = i / (NFRAMES - 1), col = new THREE.Color(0x8a0c18).lerp(new THREE.Color(0xe0a0a6), Math.pow(k, .8));
+  const u = { uMelt: { value: 0 }, uT: { value: 0 } };
+  const m = new THREE.MeshPhysicalMaterial({ color: col, roughness: .28, clearcoat: .8, clearcoatRoughness: .15, sheen: .4, sheenColor: new THREE.Color(0xffc0c8), envMapIntensity: .8 });
+  m.onBeforeCompile = sh => { Object.assign(sh.uniforms, u);
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uMelt, uT;')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        float sag = uMelt * (1. + .6 * sin(transformed.x * 1.3 + uT * .5) + .4 * sin(transformed.x * 3.1 - uT * .3));
+        transformed.y -= sag * transformed.y * .85 + uMelt * uMelt * 2.;          // it slumps like warm wax, then slides into the water
+        transformed.x *= 1. + uMelt * .25 * (1. - transformed.y / 13.);`); };
+  m.customProgramCacheKey = () => 'frame';
+  const f = new THREE.Mesh(frameGeo, m); const z = Z_PASS0 - i * FRAME_STEP; f.position.set(0, -14, z); scene.add(f);
+  frames.push({ mesh: f, u, z, i, rose: false, ph: i * .37 });
+}
+// the ribbons the frames melt into: long bands of polished silver flowing on, then rising into the arches of the garden
+const silverMat = new THREE.MeshPhysicalMaterial({ color: 0xf4eef0, metalness: 1, roughness: .07, envMap: window.__silverEnv, envMapIntensity: 1.5, clearcoat: .7, side: THREE.DoubleSide });
+const ribU = { uT: { value: 0 } };
+silverMat.onBeforeCompile = sh => { sh.uniforms.uT = ribU.uT; sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uT;')
+  .replace('#include <begin_vertex>', '#include <begin_vertex>\n transformed.y += sin(uT * .6 + position.z * .18 + position.x) * .18; transformed.x += sin(uT * .4 + position.z * .11) * .12;'); };
+silverMat.customProgramCacheKey = () => 'ribbon';
+function ribbonGeo(curve, width, twist, seg = 600){ const pos = [], uvs = [], idx = [], fr = curve.computeFrenetFrames(seg, false);
+  for (let i = 0; i <= seg; i++){ const u = i / seg, p = curve.getPointAt(u), a = u * twist; const nrm = fr.normals[i], bi = fr.binormals[i];
+    const dir = nrm.clone().multiplyScalar(Math.cos(a)).add(bi.clone().multiplyScalar(Math.sin(a))), w = width * (.55 + .45 * Math.sin(u * 13.1 + width)) * Math.min(1, u * 8);
+    pos.push(p.x - dir.x * w, p.y - dir.y * w, p.z - dir.z * w, p.x + dir.x * w, p.y + dir.y * w, p.z + dir.z * w); uvs.push(u * 40, 0, u * 40, 1);
+    if (i < seg){ const b = i * 2; idx.push(b, b + 1, b + 2, b + 1, b + 3, b + 2); } }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2)); g.setIndex(idx); g.computeVertexNormals(); return g; }
+const ribbons = [];
+[[-2.4, 3.2, .55, 9], [2.2, 5.5, .4, -12], [-.4, 8, .7, 7], [3.6, 2, .3, -9]].forEach(([x0, y0, w, tw], k) => {
+  const pts = []; for (let i = 0; i <= 40; i++){ const z = -254 - i * 4.2, g = smooth(-300, -345, z);       // in the garden they rise into arches, like branches
+    pts.push(new THREE.Vector3(lerp(x0 + Math.sin(i * .5 + k) * 1.6, Math.sign(x0 || 1) * (5 + Math.sin(i * .7 + k) * 2), g), lerp(y0 + Math.sin(i * .37 + k * 2) * 1.4, 7 + Math.sin(i * .9 + k) * 3.5, g), z)); }
+  const mesh = new THREE.Mesh(ribbonGeo(new THREE.CatmullRomCurve3(pts), w, tw), silverMat); mesh.frustumCulled = false; mesh.geometry.setDrawRange(0, 0); scene.add(mesh); ribbons.push(mesh); });
+
+/* ================================ CHAPTER IV — THE MIRROR GARDEN ================================
+   Dark burgundy foliage and pale pink lilies on the black water; tall fractured mirrors that show other dreams (floating stairs,
+   endless arches, distant water under a pink sky and a moon); near them the fragments come apart and float upward. */
+const Z_G0 = -300, Z_G1 = -400;
+const garden = new THREE.Group(); scene.add(garden);
+{ // foliage: clusters of serrated dark burgundy leaves
+  const leaf = new THREE.Shape(); leaf.moveTo(0, 0); for (let i = 0; i <= 12; i++){ const u = i / 12, w = Math.sin(u * Math.PI) * .22 * (1 + .25 * (i % 2)); leaf.lineTo(w, u); } for (let i = 12; i >= 0; i--){ const u = i / 12, w = Math.sin(u * Math.PI) * .22 * (1 + .25 * (i % 2)); leaf.lineTo(-w, u); }
+  const lg = new THREE.ShapeGeometry(leaf); { const p = lg.attributes.position; for (let i = 0; i < p.count; i++) p.setZ(i, -Math.pow(p.getX(i), 2) * 2 + p.getY(i) * p.getY(i) * .25); lg.computeVertexNormals(); }
+  const lm = new THREE.MeshPhysicalMaterial({ roughness: .4, clearcoat: .6, clearcoatRoughness: .3, side: THREE.DoubleSide, sheen: .5, sheenColor: new THREE.Color(0xff3050) });
+  const N = LITE ? 2600 : 7000, im = new THREE.InstancedMesh(lg, lm, N), d = new THREE.Object3D(), c = new THREE.Color();
+  for (let i = 0; i < N; i++){ const cl = Math.floor(rnd() * 60), cz = Z_G0 - 4 - (cl % 30) * 3.5 - rnd() * 3, cx = (cl < 30 ? -1 : 1) * (2.8 + rnd() * 9), r = rnd() * 1.6;
+    d.position.set(cx + (rnd() - .5) * 2.4, .05 + rnd() * 2.2 * (1 - r * .3), cz + (rnd() - .5) * 2.4); d.rotation.set(-.4 + (rnd() - .5) * .9, rnd() * 6.3, (rnd() - .5) * .5); d.scale.setScalar(.35 + rnd() * .55); d.updateMatrix(); im.setMatrixAt(i, d.matrix); im.setColorAt(i, c.setHSL(.985 + rnd() * .02, .75, .08 + rnd() * .12)); }
+  garden.add(im); }
+// lilies: six recurved petals, blush to white, speckled, with long stamens
+const lilyTex = (() => { const cv = document.createElement('canvas'); cv.width = 64; cv.height = 256; const x = cv.getContext('2d'), g = x.createLinearGradient(0, 256, 0, 0);
+  g.addColorStop(0, '#b0485a'); g.addColorStop(.35, '#f0b8c0'); g.addColorStop(1, '#fff3f2'); x.fillStyle = g; x.fillRect(0, 0, 64, 256);
+  for (let i = 0; i < 60; i++){ x.fillStyle = `rgba(120,20,40,${.3 + rnd() * .5})`; x.beginPath(); x.arc(20 + rnd() * 24, 180 - rnd() * 120, .8 + rnd() * 1.8, 0, 7); x.fill(); } return new THREE.CanvasTexture(cv); })();
+lilyTex.colorSpace = THREE.SRGBColorSpace;
+const petalG = (() => { const g = new THREE.PlaneGeometry(.34, 1.3, 6, 24), p = g.attributes.position; g.translate(0, .65, 0);
+  for (let i = 0; i < p.count; i++){ const x = p.getX(i), y = p.getY(i), u = y / 1.3; p.setX(i, x * Math.sin(Math.min(1, u * 1.15) * Math.PI) * 1.3); p.setZ(i, Math.pow(u, 2.2) * 1.1 - x * x * 1.8); } g.computeVertexNormals(); return g; })();
+const petalM = new THREE.MeshPhysicalMaterial({ map: lilyTex, emissiveMap: lilyTex, emissive: 0x5a3034, emissiveIntensity: .7, roughness: .5, sheen: 1, sheenColor: new THREE.Color(0xffe8ea), side: THREE.DoubleSide, transmission: LITE ? 0 : .15, thickness: .1 });
+const lilies = [];
+for (let i = 0; i < (LITE ? 16 : 30); i++){
+  const g = new THREE.Group(), z = Z_G0 - 3 - rnd() * 92, x = (rnd() < .5 ? -1 : 1) * (1.4 + rnd() * 5.5), sc = 1.3 + rnd() * 1.3; g.position.set(x, .5 + rnd() * 1.8, z); g.scale.setScalar(sc);
+  for (let k = 0; k < 6; k++){ const pv = new THREE.Group(); pv.rotation.y = k / 6 * Math.PI * 2 + (k % 2) * .2; const pm = new THREE.Mesh(petalG, petalM); pm.rotation.x = -.95 - (k % 2) * .15; pv.add(pm); g.add(pv); }
+  for (let k = 0; k < 6; k++){ const a = k / 6 * Math.PI * 2, st = new THREE.Mesh(new THREE.CylinderGeometry(.008, .008, .8, 4), new THREE.MeshStandardMaterial({ color: 0xe8d8c8 })); st.position.set(Math.cos(a) * .08, .4, Math.sin(a) * .08); st.rotation.set(Math.sin(a) * .25, 0, -Math.cos(a) * .25); g.add(st);
+    const an = new THREE.Mesh(new THREE.CapsuleGeometry(.025, .08, 3, 6), new THREE.MeshStandardMaterial({ color: 0x8a2a10 })); an.position.set(Math.cos(a) * .18, .8, Math.sin(a) * .18); an.rotation.z = Math.PI / 2; g.add(an); }
+  g.rotation.set((rnd() - .5) * .6, rnd() * 6, (rnd() - .5) * .6); garden.add(g); lilies.push({ g, ph: rnd() * 6 }); }
+// the other dreams the mirrors show: a pink sky with a moon, endless arches over water, floating stairs
+const dreamScene = new THREE.Scene(); dreamScene.background = new THREE.Color(0x7a4a58); dreamScene.fog = new THREE.FogExp2(0xb07a88, .007);
+{ const sky = new THREE.Mesh(new THREE.SphereGeometry(200, 32, 16), new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, uniforms: {}, vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }',
+    fragmentShader: 'varying vec3 vP; void main(){ float y = vP.y; vec3 c = mix(vec3(1., .78, .8), vec3(.42, .18, .26), smoothstep(-.05, .5, y)); gl_FragColor = vec4(c, 1.); }' })); dreamScene.add(sky);
+  const moon = new THREE.Mesh(new THREE.CircleGeometry(6, 48), new THREE.MeshBasicMaterial({ color: 0xfff0ea, fog: false })); moon.position.set(30, 40, -150); moon.lookAt(0, 0, 0); dreamScene.add(moon);
+  const wm = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshStandardMaterial({ color: 0x401820, roughness: .06, metalness: .6 })); wm.rotation.x = -Math.PI / 2; dreamScene.add(wm);
+  const stone = new THREE.MeshStandardMaterial({ color: 0xd8b0b4, roughness: .6 }), arch = new THREE.Shape(); arch.moveTo(-3, 0); arch.lineTo(3, 0); arch.lineTo(3, 14); arch.lineTo(-3, 14); arch.lineTo(-3, 0);
+  const ah = new THREE.Path(); ah.moveTo(-2.1, 0); ah.lineTo(2.1, 0); ah.lineTo(2.1, 8); ah.absarc(0, 8, 2.1, 0, Math.PI, false); ah.lineTo(-2.1, 0); arch.holes.push(ah);
+  const ag = new THREE.ExtrudeGeometry(arch, { depth: 1, bevelEnabled: false, curveSegments: 24 });
+  for (let i = 0; i < 16; i++) for (const sd of [-1, 1]){ const a = new THREE.Mesh(ag, stone); a.position.set(sd * 9, 0, -10 - i * 7); a.rotation.y = sd * Math.PI / 2; dreamScene.add(a); }
+  for (let s = 0; s < 4; s++){ const g = new THREE.Group(); g.position.set(-14 + s * 9, 3 + s * 4, -40 - s * 18); g.rotation.y = s * .8; for (let k = 0; k < 14; k++){ const st = new THREE.Mesh(new THREE.BoxGeometry(2.4, .3, .9), stone); st.position.set(0, k * .45, -k * .8); g.add(st); } dreamScene.add(g); }
+  dreamScene.add(new THREE.HemisphereLight(0xffe8ec, 0x6a2838, 2.4)); const dl = new THREE.DirectionalLight(0xfff0f0, 3); dl.position.set(20, 30, -40); dreamScene.add(dl); }
+const dreamRT = new THREE.WebGLRenderTarget(Math.round(innerWidth * .5), Math.round(innerHeight * .5)); dreamRT.texture.colorSpace = THREE.SRGBColorSpace;
+const dreamCam = new THREE.PerspectiveCamera(52, innerWidth / innerHeight, .1, 500);
+// the mirrors: tall irregular shards, each cut into fragments that come apart and float up as the visitor approaches
+const mirrorMat = new THREE.ShaderMaterial({ side: THREE.DoubleSide, transparent: true, uniforms: { tDream: { value: dreamRT.texture }, uRes: { value: new THREE.Vector2(innerWidth, innerHeight) }, uOff: { value: new THREE.Vector2() }, uFade: { value: 1 }, uT: { value: 0 } },
+  vertexShader: 'varying vec3 vW; void main(){ vW = (modelMatrix * vec4(position, 1.)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vW, 1.); }',
+  fragmentShader: `uniform sampler2D tDream; uniform vec2 uRes, uOff; uniform float uFade, uT; varying vec3 vW;
+    void main(){ vec2 uv = clamp(gl_FragCoord.xy / uRes, 0., 1.) * .96 + .02 + uOff + vec2(sin(vW.y * .7 + uT * .3), cos(vW.x * .5)) * .006;
+      vec3 c = texture2D(tDream, uv).rgb; c = pow(c, vec3(1.1)) * vec3(1., .88, .92) * 1.1;
+      float glint = pow(max(0., sin(vW.x * 1.7 + vW.y * .9 - uT * .4)), 40.) * .5; gl_FragColor = vec4(c + glint, uFade); }` });
+const edgeMat = new THREE.LineBasicMaterial({ color: 0xfff2f2, transparent: true, opacity: .8 });
+const mirrors = [];
+for (let i = 0; i < 7; i++){
+  const g = new THREE.Group(), side = i % 2 ? 1 : -1, z = Z_G0 - 10 - i * 12.5, x = side * (3.4 + rnd() * 3.5); g.position.set(x, 0, z); g.rotation.y = -side * (.35 + rnd() * .3); garden.add(g);
+  // an irregular outline, cut into fan fragments around an inner point
+  const H = 5 + rnd() * 4, W = 1.6 + rnd() * 1.4, out = [[-W * .5, 0], [W * .55, 0], [W * (.6 + rnd() * .2), H * .45], [W * (.3 + rnd() * .3), H], [-W * (.1 + rnd() * .3), H * (.8 + rnd() * .2)], [-W * (.6 + rnd() * .2), H * .5]];
+  const cx = (rnd() - .5) * W * .3, cy = H * (.4 + rnd() * .2), frags = [];
+  for (let k = 0; k < out.length; k++){ const a = out[k], b = out[(k + 1) % out.length], sh = new THREE.Shape(); sh.moveTo(cx, cy); sh.lineTo(a[0], a[1]); sh.lineTo(b[0], b[1]); sh.lineTo(cx, cy);
+    const geo = new THREE.ShapeGeometry(sh); const mesh = new THREE.Mesh(geo, mirrorMat); const edge = new THREE.LineSegments(new THREE.EdgesGeometry(geo), edgeMat); const fr = new THREE.Group(); fr.add(mesh, edge); g.add(fr);
+    frags.push({ fr, vy: .3 + rnd() * .6, rx: (rnd() - .5) * .6, rz: (rnd() - .5) * .6, ox: (a[0] + b[0] + cx) / 3, oy: (a[1] + b[1] + cy) / 3 }); }
+  mirrors.push({ g, z, frags, lift: 0 }); }
+
+/* ================================ CHAPTER V — THE DISSOLUTION ================================
+   Pale blush, ivory, liquid silver: translucent membranes drifting, soft liquid sculptures that never keep a shape,
+   an almost infinite horizon; it grows brighter until matter, reflection and light are the same; a pink glow; it may begin again. */
+const Z_D0 = -400, Z_LAST = -505;
+const membranes = [];
+[[-7, 7, -420, 28, 14, .5], [6, 9, -440, 30, 16, -.4], [0, 13, -458, 40, 12, 0], [-9, 5, -472, 26, 18, .7], [8, 6, -488, 30, 16, -.6]].forEach(([x, y, z, w, h, ry]) => {
+  const m = silk(w, h, 70, .32, 0xf2c4c8); m.material.emissive.set(0x3a1a1c); m.material.emissiveIntensity = .5; m.material.sheenColor.set(0xffffff); m.position.set(x, y, z); m.rotation.set(-.2, ry, (Math.random() - .5) * .4); scene.add(m); membranes.push(m); m.visible = false; });
+const sculptU = { uT: { value: 0 } };
+const pearlMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 1, roughness: .05, envMap: window.__silverEnv, envMapIntensity: 1.5, iridescence: .3, iridescenceIOR: 1.4, clearcoat: .8 });
+pearlMat.onBeforeCompile = sh => { sh.uniforms.uT = sculptU.uT; sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uT;\n' + NOISE)
+  .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>')
+  .replace('#include <begin_vertex>', `#include <begin_vertex>
+    float k = fbm(normal.xy * 1.2 + vec2(uT * .05, normal.z + uT * .04)) - .5; transformed += normal * k * .9;
+    transformed.y *= 1. + .35 * sin(uT * .2 + position.x); transformed.x += sin(transformed.y * .6 + uT * .3) * .6;`); };
+pearlMat.customProgramCacheKey = () => 'pearl';
+const sculpts = [];
+[[-5, 3, -430, 3], [6, 4, -455, 4.2], [-3, 6, -480, 3.6], [4, 2.5, -496, 2.6]].forEach(([x, y, z, r]) => { const s = new THREE.Mesh(new THREE.IcosahedronGeometry(r, LITE ? 24 : 48), pearlMat); s.position.set(x, y, z); s.scale.set(1, 1.6, .8); scene.add(s); sculpts.push(s); s.visible = false; });
+const endTitle = document.getElementById('endtitle');
+const glowEl = Object.assign(document.createElement('div'), { className: 'endglow' }); glowEl.setAttribute('aria-hidden', 'true'); document.body.append(glowEl);
+// the pale world the silver reflects at the end
+{ const soft = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d'), g = x.createRadialGradient(64, 64, 0, 64, 64, 64); g.addColorStop(0, '#fff'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 128, 128); return new THREE.CanvasTexture(c); })();
+  const env = new THREE.Scene(); env.background = new THREE.Color(0xe8d0d2);
+  for (const [w, h, x, y, z, c, k] of [[40, 20, 0, 14, -10, 0xffffff, 1.4], [20, 30, -14, 4, 6, 0xffd8e0, 1], [20, 30, 14, 4, -8, 0xfff0f0, 1], [30, 10, 0, -8, 12, 0xd8a0a8, .8]]){ const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: soft, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, color: new THREE.Color(c).multiplyScalar(k), side: THREE.DoubleSide })); m.position.set(x, y, z); m.lookAt(0, 0, 0); env.add(m); }
+  window.__paleEnv = new THREE.PMREMGenerator(renderer).fromScene(env, .02).texture; }
+silverMat.envMap = window.__paleEnv; silverMat.envMapIntensity = 1.2; pearlMat.envMap = window.__paleEnv;   // the ribbons already carry the pale light of the end
+
+/* ================================ THE LOOK — light, reflections, textures, materials ================================
+   Nothing new in the dream: only how it is lit, how its surfaces answer the light, and how the image is graded. */
+// ---- procedural textures (generated once) ----
+function heightCanvas(w, h, fn){ const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d'), img = x.createImageData(w, h), H = new Float32Array(w * h);
+  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) H[j * w + i] = fn(i / w, j / h);
+  return { c, x, img, H, w, h }; }
+function toNormalMap(o, strength = 2){ const { w, h, H, img, x, c } = o;
+  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++){ const l = H[j * w + (i + w - 1) % w], r = H[j * w + (i + 1) % w], u = H[((j + h - 1) % h) * w + i], d = H[((j + 1) % h) * w + i];
+    let nx = (l - r) * strength, ny = (u - d) * strength, nz = 1, L = Math.hypot(nx, ny, nz); nx /= L; ny /= L; nz /= L; const k = (j * w + i) * 4;
+    img.data[k] = (nx * .5 + .5) * 255; img.data[k + 1] = (ny * .5 + .5) * 255; img.data[k + 2] = (nz * .5 + .5) * 255; img.data[k + 3] = 255; }
+  x.putImageData(img, 0, 0); const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; return t; }
+function toGreyMap(o, lo = 0, hi = 1){ const { w, h, H, img, x, c } = o; for (let k = 0; k < w * h; k++){ const v = (lo + (hi - lo) * H[k]) * 255; img.data[k * 4] = img.data[k * 4 + 1] = img.data[k * 4 + 2] = v; img.data[k * 4 + 3] = 255; }
+  x.putImageData(img, 0, 0); const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; return t; }
+const hash = (x, y) => { const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return s - Math.floor(s); };
+const vnoise = (x, y) => { const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi, u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  return lerp(lerp(hash(xi, yi), hash(xi + 1, yi), u), lerp(hash(xi, yi + 1), hash(xi + 1, yi + 1), u), v); };
+const tileN = (x, y, f) => { // tileable noise on the unit square
+  const a = vnoise(x * f, y * f), b = vnoise((x - 1) * f, y * f), c = vnoise(x * f, (y - 1) * f), d = vnoise((x - 1) * f, (y - 1) * f); return lerp(lerp(a, b, x), lerp(c, d, x), y); };
+const fbmT = (x, y, f) => tileN(x, y, f) * .5 + tileN(x, y, f * 2) * .25 + tileN(x, y, f * 4) * .125 + tileN(x, y, f * 8) * .0625;
+const TS = LITE ? 128 : 256;
+const peelN = toNormalMap(heightCanvas(TS, TS, (u, v) => fbmT(u, v, 16)), 1.4);                                   // lacquer orange-peel
+const roughG = toGreyMap(heightCanvas(TS, TS, (u, v) => fbmT(u, v, 6)), .35, 1);                                 // micro-roughness variation
+const silkN = toNormalMap(heightCanvas(TS, TS, (u, v) => Math.sin((v + fbmT(u, v, 3) * .02) * Math.PI * 2 * 64) * .5 + .5 + (hash(Math.floor(u * 128), Math.floor(v * 64)) - .5) * .15), 1.6);   // fine threads
+const featherN = toNormalMap(heightCanvas(TS, TS, (u, v) => { const k = Math.abs(((u * 6) % 1) - .5) * 2; return Math.sin((v * 40 + k * 3) * Math.PI) * .5 + .5 + k * .3; }), 1.2);           // barbs
+const smudge = (() => { const o = heightCanvas(TS, TS, (u, v) => fbmT(u, v, 4)); const t = toGreyMap(o); const x = o.x; x.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 70; i++){ x.strokeStyle = `rgba(255,255,255,${.04 + rnd() * .08})`; x.lineWidth = .5 + rnd(); x.beginPath(); const a = rnd() * 6.3, X = rnd() * TS, Y = rnd() * TS, L = 10 + rnd() * 60; x.moveTo(X, Y); x.lineTo(X + Math.cos(a) * L, Y + Math.sin(a) * L); x.stroke(); }
+  t.needsUpdate = true; return t; })();
+
+// ---- richer, high-dynamic-range worlds for the reflections ----
+function richEnv(sky, panels){ const env = new THREE.Scene();
+  env.add(new THREE.Mesh(new THREE.SphereGeometry(50, 32, 16), new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, uniforms: { a: { value: new THREE.Color(sky[0]) }, b: { value: new THREE.Color(sky[1]) }, c: { value: new THREE.Color(sky[2]) } },
+    vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }',
+    fragmentShader: 'uniform vec3 a, b, c; varying vec3 vP; void main(){ float y = vP.y; gl_FragColor = vec4(y < 0. ? mix(b, a, smoothstep(0., -.6, y)) : mix(b, c, smoothstep(0., .7, y)), 1.); }' })));
+  const soft = (() => { const cv = document.createElement('canvas'); cv.width = cv.height = 128; const x = cv.getContext('2d'), g = x.createRadialGradient(64, 64, 0, 64, 64, 64); g.addColorStop(0, '#fff'); g.addColorStop(.6, 'rgba(255,255,255,.9)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 128, 128); return new THREE.CanvasTexture(cv); })();
+  for (const [w, h, x, y, z, col, k, hard] of panels){ const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: hard ? null : soft, transparent: !hard, depthWrite: false, blending: hard ? THREE.NormalBlending : THREE.AdditiveBlending, color: new THREE.Color(col).multiplyScalar(k), side: THREE.DoubleSide }));
+    m.position.set(x, y, z); m.lookAt(0, 0, 0); env.add(m); }
+  return new THREE.PMREMGenerator(renderer).fromScene(env, .012).texture; }
+const ENV_DARK = richEnv([0x2a0306, 0x060001, 0x0e0103], [[26, 14, 0, 26, -8, 0xffe8e4, 5], [3, 30, -18, 6, -10, 0xffffff, 6, true], [3, 30, 18, 6, -12, 0xffffff, 4.5, true], [10, 14, 0, 5, -40, 0xffb0a8, 8], [14, 26, -26, 4, 10, 0xff1a2a, 2.2], [14, 26, 26, 4, 6, 0xff1a2a, 2.2], [40, 8, 0, -14, 0, 0x4a0408, 1.4]]);
+const ENV_SILVER = richEnv([0x140a0c, 0x050304, 0x0a0607], [[30, 12, 0, 28, -6, 0xffffff, 7], [2.5, 34, -16, 6, -6, 0xffffff, 8, true], [2.5, 34, 16, 6, -10, 0xffffff, 6, true], [12, 12, 0, 4, -36, 0xffd8d4, 6], [18, 20, 0, -2, 30, 0x401018, 1.5]]);
+const ENV_PALE = richEnv([0xd8bcc0, 0xf2e2e2, 0xfff6f4], [[40, 22, 0, 24, -10, 0xffffff, 3.5], [3, 30, -16, 6, -4, 0xffffff, 4, true], [26, 16, 0, 4, -40, 0xfff2ea, 5], [20, 20, 18, 2, 10, 0xffc8d0, 1.6]]);
+scene.environment = ENV_DARK; scene.environmentIntensity = 1;
+
+// ---- materials ----
+Object.assign(chrome, { envMap: ENV_SILVER, envMapIntensity: 1.25, roughness: .14, roughnessMap: roughG, clearcoat: .5, clearcoatRoughness: .04, anisotropy: .55, color: new THREE.Color(0xf6f2f2) }); chrome.needsUpdate = true;
+Object.assign(lacquer, { color: new THREE.Color(0x1a0204), roughness: .55, normalMap: peelN, normalScale: new THREE.Vector2(.18, .18), clearcoat: 1, clearcoatRoughness: .07, clearcoatNormalMap: peelN, clearcoatNormalScale: new THREE.Vector2(.12, .12), sheen: .25 }); lacquer.needsUpdate = true;
+Object.assign(feather, { roughness: .78, normalMap: featherN, normalScale: new THREE.Vector2(.35, .35), sheen: 1, sheenRoughness: .4, sheenColor: new THREE.Color(0xffffff), clearcoat: 0, envMapIntensity: .55 }); feather.needsUpdate = true;
+Object.assign(silverMat, { envMap: ENV_PALE, envMapIntensity: .9, roughness: .12, roughnessMap: roughG, anisotropy: .4, clearcoat: .8, clearcoatRoughness: .03 }); silverMat.needsUpdate = true;
+Object.assign(pearlMat, { envMap: ENV_PALE, envMapIntensity: 1.1, roughness: .1, roughnessMap: roughG, clearcoat: 1, clearcoatRoughness: .02, iridescence: .25 }); pearlMat.needsUpdate = true;
+Object.assign(petalM, { color: new THREE.Color(0xfff4f4), emissiveIntensity: .5, roughness: .55, transmission: 0, sheen: 1, sheenRoughness: .3, sheenColor: new THREE.Color(0xffffff) }); petalM.needsUpdate = true;
+frames.forEach(f => { Object.assign(f.mesh.material, { roughness: .42, roughnessMap: roughG, normalMap: peelN, normalScale: new THREE.Vector2(.08, .08), clearcoat: 1, clearcoatRoughness: .05, envMap: ENV_SILVER, envMapIntensity: .6 }); f.mesh.material.needsUpdate = true; });
+{ const leafM = garden.children.find(o => o.isInstancedMesh)?.material; if (leafM){ Object.assign(leafM, { roughness: .5, clearcoat: 1, clearcoatRoughness: .12, normalMap: peelN, normalScale: new THREE.Vector2(.3, .3), sheen: .7, sheenRoughness: .4, emissive: new THREE.Color(0x2a0308), emissiveIntensity: 1 }); leafM.needsUpdate = true; } }
+// silk: woven threads, a sheen that slides across the folds, more opaque at grazing angles, light passing through
+for (const m of [...silks, ...membranes]){ const mat = m.material, prev = mat.onBeforeCompile;
+  Object.assign(mat, { normalMap: silkN, normalScale: new THREE.Vector2(.45, .45), roughness: .6, sheenRoughness: .22 }); mat.normalMap.repeat.set(10, 10);
+  mat.onBeforeCompile = (sh, r) => { prev(sh, r); sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', `
+      float fr = pow(1. - abs(dot(normalize(-vViewPosition), normal)), 2.);
+      diffuseColor.a = clamp(diffuseColor.a * (.5 + 1.3 * fr), 0., 1.); outgoingLight += diffuseColor.rgb * fr * .35 + vec3(1., .3, .35) * pow(fr, 3.) * .06;
+      #include <opaque_fragment>`); };
+  mat.needsUpdate = true; }
+// mirrors: old glass — faint smudges and scratches, brighter at the edges, darker where you look straight in
+mirrorMat.uniforms.tSmudge = { value: smudge };
+mirrorMat.fragmentShader = mirrorMat.fragmentShader.replace('uniform float uFade, uT;', 'uniform float uFade, uT; uniform sampler2D tSmudge;')
+  .replace('gl_FragColor = vec4(c + glint, uFade); }', 'float dirt = texture2D(tSmudge, vW.xy * .18 + vW.z * .05).r; c *= .82 + .22 * dirt; c += vec3(1., .94, .95) * smoothstep(.72, 1., dirt) * .05; float near = smoothstep(2.5, 8., distance(cameraPosition, vW)); float lum = dot(c, vec3(.3, .59, .11)); c = mix(vec3(.42, .1, .14) * (.7 + .5 * dirt) + vec3(.5, .3, .32) * smoothstep(.4, 1., sin(vW.y * .9 + vW.x * .4 - uT * .2) * .5 + .5) * .25, c, smoothstep(.03, .18, lum)); gl_FragColor = vec4(c + glint * (.6 + dirt), uFade * near); }');
+mirrorMat.needsUpdate = true;
+
+// ---- light: a key per chapter, a cold light that finds the chains, and volumetric shafts in the haze ----
+const keyD = new THREE.DirectionalLight(0xffffff, 0); scene.add(keyD, keyD.target);
+const chainSpot = new THREE.SpotLight(0xfff4f2, 0, 40, .5, .7, 1.2); scene.add(chainSpot, chainSpot.target);
+const shaftMat = (col) => new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false, uniforms: { uT: { value: 0 }, uO: { value: 0 }, uC: { value: new THREE.Color(col) } },
+  vertexShader: 'varying vec2 vUv; varying vec3 vN; varying vec3 vV; void main(){ vUv = uv; vec4 w = modelMatrix * vec4(position, 1.); vN = normalize(mat3(modelMatrix) * normal); vV = normalize(cameraPosition - w.xyz); gl_Position = projectionMatrix * viewMatrix * w; }',
+  fragmentShader: `uniform float uT, uO; uniform vec3 uC; varying vec2 vUv; varying vec3 vN; varying vec3 vV; ${NOISE}
+    void main(){ float edge = pow(abs(dot(vN, vV)), 1.6); float along = smoothstep(0., .25, vUv.y) * smoothstep(1., .55, vUv.y);
+      float dust = .65 + .35 * fbm(vec2(vUv.x * 6. + uT * .03, vUv.y * 3. - uT * .05));
+      float a = edge * along * dust * uO; gl_FragColor = vec4(uC * a, a); }` });
+const shafts = [];
+function shaft(from, to, r0, r1, col, win){ const len = from.distanceTo(to), g = new THREE.CylinderGeometry(r1, r0, len, 32, 1, true); g.translate(0, len / 2, 0);
+  const m = new THREE.Mesh(g, shaftMat(col)); m.position.copy(from); m.lookAt(to); m.rotateX(Math.PI / 2); m.frustumCulled = false; scene.add(m); shafts.push({ m, win, k: 0 }); return m; }
+const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+// the Descent: rays from the lit opening toward the visitor; thin rays from above between the chains
+shaft(V3(0, 7, Z_OPEN - 6), V3(0, 1.6, -30), .9, 7, 0xffb8b0, [-10, -80, .55]); shaft(V3(-1.5, 9, Z_OPEN - 6), V3(-6, 0, -45), .6, 5, 0xff9a90, [-20, -80, .35]); shaft(V3(1.8, 9, Z_OPEN - 6), V3(6, 0, -50), .6, 5, 0xff9a90, [-20, -80, .35]);
+for (let i = 0; i < 6; i++){ const z = -6 - i * 13, x = (i % 2 ? 1 : -1) * (1.5 + (i % 3)); shaft(V3(x, 26, z), V3(x * 1.2, 0, z - 6), .3, 1.6, 0xffd8d4, [12, -86, .22]); }
+// the Lake: a pink sun through the haze
+shaft(V3(30, 40, -200), V3(4, 0, -120), 4, 22, 0xffc0c4, [-95, -160, .3]); shaft(V3(18, 40, -210), V3(-8, 0, -130), 3, 16, 0xffd0d0, [-100, -160, .2]);
+// the Passage: light pouring from the far end of the frames
+shaft(V3(0, 6, -300), V3(0, 3, -160), 2, 7, 0xfff0ec, [-145, -285, .35]);
+// the Garden: moonlight slanting through
+for (let i = 0; i < 4; i++){ const z = -310 - i * 22; shaft(V3(-20, 40, z - 20), V3(i % 2 ? 4 : -4, 0, z), 2, 6, 0xffd6e0, [-290, -405, .22]); }
+// the Dissolution: soft enormous light
+shaft(V3(0, 18, -560), V3(0, 2, -440), 8, 40, 0xfff2ee, [-395, -510, .28]);
+// light and sun per chapter: [z, key colour, key intensity, key direction(x,y,z), water glint colour, glint strength]
+const KEYS = [[7, 0xffc8c0, .6, [0, .35, -1], 0xffd0c8, 1.4], [-100, 0xff8a8a, .7, [.1, .3, -1], 0xffb0a8, 1.8], [-160, 0xfff0ec, .6, [0, .2, -1], 0xfff4f0, 1.3], [-300, 0xffd8e6, 1.4, [-.3, .8, .5], 0xffe8f0, .9], [-400, 0xfff6f2, 1.6, [0, .25, -1], 0xffffff, 1.2], [-505, 0xffffff, 1.8, [0, .2, -1], 0xffffff, 1]];
+const kc1 = new THREE.Color(), kc2 = new THREE.Color(), kd = new THREE.Vector3(), kd2 = new THREE.Vector3();
+function lookAt(z, t){
+  let i = 0; while (i < KEYS.length - 2 && z < KEYS[i + 1][0]) i++; const a = KEYS[i], b = KEYS[i + 1], k = smooth(0, 1, (a[0] - z) / (a[0] - b[0]));
+  keyD.color.copy(kc1.set(a[1])).lerp(kc2.set(b[1]), k); keyD.intensity = lerp(a[2], b[2], k); kd.set(...a[3]).lerp(kd2.set(...b[3]), k).normalize();
+  keyD.position.copy(camera.position).addScaledVector(kd, 40); keyD.target.position.copy(camera.position);
+  if (WU.uSunDir){ WU.uSunDir.value.copy(kd); WU.uSunCol.value.copy(kc1.set(a[4])).lerp(kc2.set(b[4]), k).multiplyScalar(lerp(a[5], b[5], k)); }
+  chainSpot.position.set(camera.position.x, 22, camera.position.z - 4); chainSpot.target.position.set(camera.position.x, 6, camera.position.z - 16); chainSpot.intensity = 260 * (1 - smooth(-70, -95, z));
+  for (const s of shafts){ const [z0, z1, o] = s.win, w = smooth(z0 + 8, z0 - 6, z) * (1 - smooth(z1 + 10, z1 - 6, z)); s.m.material.uniforms.uO.value = w * o; s.m.material.uniforms.uT.value = t; s.m.visible = w > .005; }
+}
+
+/* ================================ THE SWAN'S HALL (after the reference) ================================
+   Around the lake: concentric arches glowing from behind, red drapes falling in vertical folds, and great sculptures of liquid
+   glass rising from the water and arching overhead; the white swan floats alone in the middle. */
+const swanHall = new THREE.Group(); scene.add(swanHall); swanHall.visible = false;
+const hallFade = { value: 1 };
+const archMat = new THREE.MeshPhysicalMaterial({ color: 0x3a0408, roughness: .38, clearcoat: 1, clearcoatRoughness: .08, normalMap: peelN, normalScale: new THREE.Vector2(.12, .12), sheen: .5, sheenColor: new THREE.Color(0xff3040), transparent: true });
+for (const [w, h, z, th] of [[24, 26, -138, 1.6], [19, 21, -142, 1.3], [14.5, 16.5, -146, 1.1]]){
+  const s = new THREE.Shape(); s.moveTo(-w / 2 - th, 0); s.lineTo(w / 2 + th, 0); s.lineTo(w / 2 + th, h - w / 2); s.absarc(0, h - w / 2, w / 2 + th, 0, Math.PI, false); s.lineTo(-w / 2 - th, 0);
+  const hole = new THREE.Path(); hole.moveTo(-w / 2, 0); hole.lineTo(w / 2, 0); hole.lineTo(w / 2, h - w / 2); hole.absarc(0, h - w / 2, w / 2, 0, Math.PI, false); hole.lineTo(-w / 2, 0); s.holes.push(hole);
+  const a = new THREE.Mesh(new THREE.ExtrudeGeometry(s, { depth: 1.4, bevelEnabled: true, bevelThickness: .15, bevelSize: .15, bevelSegments: 4, curveSegments: 64 }), archMat); a.position.set(0, 0, z); swanHall.add(a); }
+// light behind the arches
+const hallGlowTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 256; const x = c.getContext('2d'), g = x.createRadialGradient(128, 160, 0, 128, 160, 128); g.addColorStop(0, 'rgba(255,90,80,1)'); g.addColorStop(.5, 'rgba(200,20,30,.55)'); g.addColorStop(1, 'rgba(120,0,10,0)'); x.fillStyle = g; x.fillRect(0, 0, 256, 256); return new THREE.CanvasTexture(c); })();
+const hallGlow = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshBasicMaterial({ map: hallGlowTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, color: new THREE.Color(1.3, .5, .5) }));
+hallGlow.position.set(0, 10, -152); swanHall.add(hallGlow);
+const hallLight = new THREE.PointLight(0xff2a30, 900, 70, 1.5); hallLight.position.set(0, 9, -150); swanHall.add(hallLight);
+// red drapes: vertical folds on both sides and behind the arches
+const drapeMat = new THREE.ShaderMaterial({ transparent: true, fog: true, uniforms: Object.assign({ uT: { value: 0 }, uFade: hallFade }, THREE.UniformsLib.fog),
+  vertexShader: `varying vec2 vUv; varying vec3 vW; #include <fog_pars_vertex>
+    void main(){ vUv = uv; vec3 p = position; p.z += sin(p.x * 3.1) * .35 + sin(p.x * 1.3 + 1.) * .5; vec4 mvPosition = modelViewMatrix * vec4(p, 1.); vW = (modelMatrix * vec4(p, 1.)).xyz; gl_Position = projectionMatrix * mvPosition;
+    #include <fog_vertex>
+    }`.replace('varying vec3 vW; #include', 'varying vec3 vW;\n#include'),
+  fragmentShader: `uniform float uT, uFade; varying vec2 vUv; varying vec3 vW; #include <fog_pars_fragment>
+    void main(){ float f = .5 + .5 * sin(vUv.x * 190. + sin(vUv.x * 23.) * 2.); float g = .5 + .5 * sin(vUv.x * 61. + 1.3); float lit = pow(f, 3.) * .7 + pow(g, 6.) * .5;
+      vec3 c = vec3(.06, .003, .008) + vec3(.4, .02, .035) * lit * (.5 + .5 * vUv.y) * (.7 + .3 * sin(uT * .2 + vUv.x * 9.));
+      gl_FragColor = vec4(c, uFade);
+      #include <fog_fragment>
+    }`.replace('varying vec3 vW; #include', 'varying vec3 vW;\n#include') });
+for (const [x, z, ry, w] of [[-17, -175, Math.PI / 2, 180], [17, -175, -Math.PI / 2, 180]]){ const d = new THREE.Mesh(new THREE.PlaneGeometry(w, 40, Math.round(w * 2.6), 1), drapeMat); d.position.set(x, 18, z); d.rotation.y = ry; swanHall.add(d); }
+// liquid glass sculptures: thick organic arcs, twisted, never quite still
+const glassMat = new THREE.MeshPhysicalMaterial({ color: 0xffc8c8, metalness: 0, roughness: .03, transmission: LITE ? 0 : 1, thickness: 1.2, ior: 1.45, attenuationColor: new THREE.Color(0xe02030), attenuationDistance: 5,
+  clearcoat: 1, clearcoatRoughness: .02, envMap: ENV_SILVER, envMapIntensity: 1.6, specularIntensity: 1, transparent: LITE, opacity: LITE ? .55 : 1 });
+const glassU = { uT: { value: 0 } };
+glassMat.onBeforeCompile = sh => { sh.uniforms.uT = glassU.uT; sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uT;')
+  .replace('#include <begin_vertex>', '#include <begin_vertex>\n transformed += normal * (sin(transformed.y * 1.3 + uT * .6 + transformed.x) * .12 + sin(transformed.z * 2.1 - uT * .4) * .06);'); };
+glassMat.customProgramCacheKey = () => 'liquidglass';
+function glassArc(pts, r0, r1){ const curve = new THREE.CatmullRomCurve3(pts.map(p => new THREE.Vector3(...p))), seg = 160, rad = 22, g = new THREE.TubeGeometry(curve, seg, 1, rad, false), p = g.attributes.position, n = g.attributes.normal;
+  // vary the thickness along the arc and swell/pinch it like poured glass
+  for (let i = 0; i <= seg; i++){ const u = i / seg, c = curve.getPointAt(u), R = lerp(r0, r1, Math.pow(u, .8)) * (1 + .16 * Math.sin(u * 9.3) * Math.sin(u * 3.1 + 1) + .05 * Math.sin(u * 23));
+    for (let j = 0; j <= rad; j++){ const k = i * (rad + 1) + j, a = j / rad * Math.PI * 2; const nx = n.getX(k), ny = n.getY(k), nz = n.getZ(k), tw = 1 + .12 * Math.sin(a * 2 + u * 7); p.setXYZ(k, c.x + nx * R * tw, c.y + ny * R * tw, c.z + nz * R * tw); } }
+  g.computeVertexNormals(); const m = new THREE.Mesh(g, glassMat); m.userData.z = pts.reduce((a, q) => a + q[2], 0) / pts.length; swanHall.add(m); glassArcs.push(m); return m; }
+const glassArcs = [];
+glassArc([[-12, -1, -112], [-10.5, 6, -116], [-8, 12, -122], [-2, 17, -128], [6, 17.5, -130], [11, 13, -126], [13.5, 5, -120], [14, -1, -116]], 1.9, .9);   // the great arch overhead
+glassArc([[-8, -1, -100], [-9, 4, -104], [-7.5, 9, -110], [-4, 12, -116], [0, 13, -120]], 1.2, .35);                                                      // a limb rising on the left
+glassArc([[11, -1, -104], [9.5, 4, -109], [7, 6.5, -115], [5.5, 4, -121], [6.5, -1, -125]], .9, .6);                                                      // a loop on the right
+glassArc([[-9, -1, -134], [-7, 8, -136], [0, 12, -137], [7, 8, -136], [9, -1, -134]], .6, .6);
+// along the passage, outside the frames: limbs of liquid glass rising and leaning in
+glassArc([[-8, -1, -168], [-9.5, 6, -174], [-8, 13, -182], [-6.5, 15, -186]], 1.3, .4); glassArc([[8.5, -1, -176], [10, 7, -183], [8, 14, -192], [6.5, 16, -196]], 1.2, .35);
+glassArc([[-9, -1, -205], [-11, 8, -211], [-6, 16, -219], [6, 16, -223], [11, 8, -229], [9, -1, -235]], 1.5, .8);
+glassArc([[8, -1, -240], [10, 6, -245], [8.5, 12, -251], [6, 14, -255]], 1.1, .4); glassArc([[-8.5, -1, -246], [-10, 5, -250], [-8, 10, -256]], 1, .5);                                                              // a thin arch before the arches
+
+/* ================================ POST ================================ */
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), .26, .55, .9); if (!LITE) composer.addPass(bloom);
+composer.addPass(new OutputPass());
+const film = new ShaderPass({ uniforms: { tDiffuse: { value: null }, uT: { value: 0 } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }',
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float uT; varying vec2 vUv;
+    void main(){ vec2 d = vUv - .5; float r2 = dot(d, d); vec2 o = d * .004 * (.5 + r2 * 3.);
+      vec3 c = vec3(texture2D(tDiffuse, vUv + o).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - o).b);
+      float lum = dot(c, vec3(.2126, .7152, .0722));
+      c = mix(c * vec3(1.05, .9, .93), c * vec3(1.01, .99, .98), smoothstep(.12, .65, lum));           // crimson in the shadows, warm ivory in the lights
+      c = mix(c, c * c * (3. - 2. * c), .28);                                                      // a soft filmic S-curve
+      c = max(c - .008, 0.) * 1.012;                                                                // true blacks
+      float g = fract(sin(dot(vUv * vec2(1271.3, 311.7) + uT * 9.7, vec2(12.9898, 78.233))) * 43758.5453); c += (g - .5) * .022 * (1. - lum * .6);
+      c *= 1. - smoothstep(.12, .8, r2) * .8; gl_FragColor = vec4(c, 1.); }` });
+composer.addPass(film);
+addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
+
+/* ================================ SOUND ================================
+   No voice. The hall: a deep drone, distant metallic resonance, chains. The lake: almost silence — water, a low frequency. */
+const Sound = (() => {
+  /* An experimental sound installation, not background music. No voice. Everything is synthesised and slightly random,
+     so nothing repeats: a breathing sub, a dark drone, metallic resonance that answers reflective surfaces, liquid
+     stretching and drips, granular dust, glass frequencies, electronic pulses with the light, distant metal strikes;
+     moments of near silence; the final red room deeper and slower until it dissolves into silence. */
+  let ctx, on = false, out, master, lp, breath, verb, echoIn, nb, sub = [], drone, droneF, droneG, endDr, endG, bank = [], bankG, pan, grainT = 0, stretchT = 4, strikeT = 6, dripT = 2, glassT = 3, gapT = 40, blipT = 0;
+  const R = Math.random, T = () => ctx.currentTime;
+  const st = { hall: 0, lake: 0, pass: 0, gard: 0, end: 0, motion: 0, speed: 0, sx: 0, refl: 0, fade: 1 };
+  function init(){
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -12; comp.ratio.value = 10; comp.attack.value = .005; comp.release.value = .3; comp.connect(ctx.destination);
+    master = ctx.createGain(); master.gain.value = 0; master.connect(comp);
+    lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 16000; lp.Q.value = .4; lp.connect(master);
+    breath = ctx.createGain(); breath.gain.value = 1; breath.connect(lp);                       // the near-silences
+    out = ctx.createGain(); out.gain.value = 1; out.connect(breath);
+    // a long dark room, and distant echoes that cross the stereo field
+    verb = ctx.createConvolver(); { const n = ctx.sampleRate * 6.5, ir = ctx.createBuffer(2, n, ctx.sampleRate); for (let c = 0; c < 2; c++){ const d = ir.getChannelData(c); let l = 0; for (let i = 0; i < n; i++){ l += .25 * ((R() * 2 - 1) - l); d[i] = l * Math.pow(1 - i / n, 2.2); } } verb.buffer = ir; }
+    const vg = ctx.createGain(); vg.gain.value = .75; verb.connect(vg); vg.connect(out);
+    echoIn = ctx.createGain(); { const dl = ctx.createDelay(2), dr = ctx.createDelay(2), fl = ctx.createGain(), fr = ctx.createGain(), elp = ctx.createBiquadFilter(), m = ctx.createChannelMerger(2), eo = ctx.createGain();
+      dl.delayTime.value = .43; dr.delayTime.value = .67; fl.gain.value = .48; fr.gain.value = .45; elp.type = 'lowpass'; elp.frequency.value = 2200; eo.gain.value = .55;
+      echoIn.connect(elp); elp.connect(dl); dl.connect(fl); fl.connect(dr); dr.connect(fr); fr.connect(dl); dl.connect(m, 0, 0); dr.connect(m, 0, 1); m.connect(eo); eo.connect(out); eo.connect(verb); }
+    nb = ctx.createBuffer(2, ctx.sampleRate * 3, ctx.sampleRate); for (let c = 0; c < 2; c++){ const d = nb.getChannelData(c); for (let i = 0; i < d.length; i++) d[i] = R() * 2 - 1; }
+    pan = ctx.createStereoPanner(); pan.connect(out); const pv = ctx.createGain(); pv.gain.value = .35; pan.connect(pv); pv.connect(verb);
+    // the sub: three slow sines whose levels wander independently (never a loop)
+    [30.9, 41.2, 46.2].forEach(f => { const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = f; g.gain.value = 0; o.connect(g); g.connect(out); o.start(); sub.push({ o, g, w: R(), f }); });
+    // the dark drone: detuned saws, closed filter that breathes
+    droneF = ctx.createBiquadFilter(); droneF.type = 'lowpass'; droneF.frequency.value = 200; droneF.Q.value = 2; droneG = ctx.createGain(); droneG.gain.value = 0; droneF.connect(droneG); droneG.connect(pan);
+    drone = [55, 55.4, 82.6, 110.3].map((f, i) => { const o = ctx.createOscillator(), g = ctx.createGain(); o.type = 'sawtooth'; o.frequency.value = f; g.gain.value = [.3, .3, .15, .06][i]; o.connect(g); g.connect(droneF); o.start(); return o; });
+    // the final red room's drone: lower, slower, beating
+    endG = ctx.createGain(); endG.gain.value = 0; endG.connect(out); endG.connect(verb);
+    endDr = [27.5, 27.8, 41.2].map((f, i) => { const o = ctx.createOscillator(), g = ctx.createGain(); o.type = i ? 'sine' : 'triangle'; o.frequency.value = f; g.gain.value = [.6, .5, .25][i]; o.connect(g); g.connect(endG); o.start(); return o; });
+    // metallic resonance: a bank of very narrow bands fed by soft noise; it rises near reflective surfaces
+    bankG = ctx.createGain(); bankG.gain.value = 0; bankG.connect(pan); const bv = ctx.createGain(); bv.gain.value = .9; bankG.connect(bv); bv.connect(verb);
+    { const s = ctx.createBufferSource(); s.buffer = nb; s.loop = true; const pre = ctx.createBiquadFilter(); pre.type = 'lowpass'; pre.frequency.value = 2400; s.connect(pre); s.start();
+      [233, 349, 523, 784, 1175, 1760].forEach(f => { const b = ctx.createBiquadFilter(); b.type = 'bandpass'; b.frequency.value = f; b.Q.value = 110; pre.connect(b); b.connect(bankG); bank.push({ b, f }); }); }
+  }
+  function env(g, t, a, peak, d){ g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(peak, t + a); g.gain.exponentialRampToValueAtTime(.0001, t + a + d); }
+  function voice(node, p = 0, wet = .3, echo = 0){ const pn = ctx.createStereoPanner(); pn.pan.value = Math.max(-1, Math.min(1, p)); node.connect(pn); pn.connect(out);
+    if (wet){ const w = ctx.createGain(); w.gain.value = wet; pn.connect(w); w.connect(verb); } if (echo){ const e = ctx.createGain(); e.gain.value = echo; pn.connect(e); e.connect(echoIn); } }
+  function bell(f, k, p, dec, wet = .5, echo = .2){ const t = T(), o = ctx.createOscillator(), m = ctx.createOscillator(), mg = ctx.createGain(), g = ctx.createGain();
+    o.frequency.value = f; m.frequency.value = f * (2.76 + R() * .02); mg.gain.setValueAtTime(f * .8, t); mg.gain.exponentialRampToValueAtTime(f * .01, t + dec * .5); m.connect(mg); mg.connect(o.frequency);
+    env(g, t, .004, .05 * k, dec); o.connect(g); voice(g, p, wet, echo); o.start(t); m.start(t); o.stop(t + dec + .1); m.stop(t + dec + .1); }
+  function grain(f, len, k, p, rate = 1){ const t = T(), s = ctx.createBufferSource(), bp = ctx.createBiquadFilter(), g = ctx.createGain(); s.buffer = nb; s.playbackRate.value = rate; bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = 6 + R() * 10;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(k, t + len * .3); g.gain.linearRampToValueAtTime(0, t + len); s.connect(bp); bp.connect(g); voice(g, p, .45, .15); s.start(t, R() * 2.5); s.stop(t + len + .02); }
+  function stretch(k, p){ const t = T(), dur = 1.4 + R() * 2.2, s = ctx.createBufferSource(), bp = ctx.createBiquadFilter(), g = ctx.createGain(), o = ctx.createOscillator(), og = ctx.createGain(), f0 = 180 + R() * 220;
+    s.buffer = nb; s.loop = true; bp.type = 'bandpass'; bp.Q.value = 9; bp.frequency.setValueAtTime(f0, t); bp.frequency.exponentialRampToValueAtTime(f0 * (2.2 + R() * 2), t + dur * .7); bp.frequency.exponentialRampToValueAtTime(f0 * .8, t + dur);
+    o.frequency.value = 3 + R() * 5; og.gain.value = f0 * .25; o.connect(og); og.connect(bp.frequency);                        // the viscous wobble of a stretching liquid
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(.09 * k, t + dur * .4); g.gain.linearRampToValueAtTime(0, t + dur);
+    s.connect(bp); bp.connect(g); voice(g, p, .6, .25); s.start(t, R() * 2); s.stop(t + dur + .05); o.start(t); o.stop(t + dur + .05); }
+  function drip(p, k = 1, echo = .3){ const t = T(), o = ctx.createOscillator(), g = ctx.createGain(), f = 380 + R() * 620; o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f * (2.2 + R()), t + .07);
+    env(g, t, .003, .07 * k, .16); o.connect(g); voice(g, p, .6, echo); o.start(t); o.stop(t + .2); }
+  function strike(f, k, p){ const t = T(); bell(f, k * 2.2, p, 5 + R() * 3, .9, .35);                                       // distant metal, struck far away
+    const s = ctx.createBufferSource(), bp = ctx.createBiquadFilter(), g = ctx.createGain(); s.buffer = nb; bp.type = 'bandpass'; bp.frequency.value = f * 3; bp.Q.value = 30; env(g, t, .002, .06 * k, 1.8); s.connect(bp); bp.connect(g); voice(g, p, .9, .3); s.start(t); s.stop(t + 2); }
+  function blip(f, p){ const t = T(), o = ctx.createOscillator(), g = ctx.createGain(); o.type = 'sine'; o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f * .985, t + .25); env(g, t, .002, .018, .25); o.connect(g); voice(g, p, .4, .35); o.start(t); o.stop(t + .3); }
+  let lastFrame = 0;
+  return {
+    get on(){ return on; },
+    async set(v){ if (v && !ctx) init(); on = v; if (!ctx) return; if (on) await ctx.resume(); master.gain.setTargetAtTime(on ? .95 : 0, T(), .9); },
+    // called each frame: hall, lake, motion, passage, garden, end room, speed, camera/cursor pan, closeness of reflective surfaces, fade-out at the very end
+    frame(hallK, lakeK, motion, passK = 0, gardK = 0, endK = 0, speed = 0, sx = 0, refl = 0, fade = 1){
+      if (!ctx || !on) return; const t = T(), dt = Math.min(.1, t - (lastFrame || t)); lastFrame = t;
+      Object.assign(st, { hall: hallK, lake: lakeK, pass: passK, gard: gardK, end: endK, motion, speed, sx, refl, fade });
+      const live = 1 - endK * .2;
+      // sub: wandering, deeper in the end room
+      sub.forEach((s, i) => { s.w += (R() - .5) * dt * .35; s.w = Math.max(0, Math.min(1, s.w)); s.g.gain.setTargetAtTime((.08 + .12 * s.w) * (.6 + .4 * (hallK + lakeK + passK * .6 + gardK * .7)) * live, t, 1.2); });
+      droneG.gain.setTargetAtTime(.05 * hallK + .03 * lakeK + .045 * passK + .03 * gardK, t, 1.5);
+      droneF.frequency.setTargetAtTime(140 + 120 * (.5 + .5 * Math.sin(t * .07)) + passK * 260 + motion * 200, t, .8);
+      drone.forEach((o, i) => o.detune.setTargetAtTime(Math.sin(t * (.03 + i * .011) + i) * 14, t, 1));
+      endG.gain.setTargetAtTime(.2 * endK * fade, t, 2.5); endDr.forEach((o, i) => o.detune.setTargetAtTime(Math.sin(t * .021 + i * 2) * 20, t, 2));
+      bankG.gain.setTargetAtTime((.012 + .035 * refl + .02 * motion) * (hallK * 1.2 + passK + gardK * .7 + endK * .6 + lakeK * .5), t, .6);
+      bank.forEach((b, i) => b.b.frequency.setTargetAtTime(b.f * (1 - endK * .5 + passK * .12 + Math.sin(t * .05 + i) * .006), t, 1));
+      pan.pan.setTargetAtTime(Math.max(-.8, Math.min(.8, sx * .7)), t, .4);                                    // the space turns with the camera and the hand
+      lp.frequency.setTargetAtTime(lerp(16000, 900, endK) * (1 - .3 * lakeK * (1 - passK)), t, 1.5);
+      master.gain.setTargetAtTime(.95 * fade, t, 1.2);
+      // granular dust: denser in the passage, glassier in the garden, sparse and low at the end
+      grainT -= dt; const dens = .08 + .5 * passK + .25 * gardK + .15 * hallK + .1 * lakeK + .1 * endK + motion * .4;
+      if (grainT <= 0){ grainT = (.05 + R() * .25) / Math.max(.05, dens);
+        const f = gardK > .4 ? 2800 + R() * 5000 : endK > .4 ? 120 + R() * 400 : 400 + R() * 3000; grain(f, .03 + R() * .12, .05 * Math.min(1, dens), R() * 1.8 - .9, .5 + R() * 1.5); }
+      // liquid stretching, now and then (lake, garden, end)
+      stretchT -= dt; if (stretchT <= 0){ stretchT = 4 + R() * 9; const k = lakeK * .9 + gardK * .6 + endK + hallK * .3; if (k > .1) stretch(k, R() * 1.6 - .8); }
+      // drips with echoes
+      dripT -= dt; if (dripT <= 0){ dripT = 1.2 + R() * 4; const k = hallK * .6 + lakeK * .8 + endK + gardK * .4; if (k > .1) drip(R() * 1.6 - .8, k, .25 + endK * .4); }
+      // distant metal: the hall, and deeper and slower in the end room
+      strikeT -= dt; if (strikeT <= 0){ strikeT = 7 + R() * 12 + endK * 6; const k = hallK + endK * 1.2 + lakeK * .3; if (k > .1) strike(endK > .4 ? 70 + R() * 50 : 110 + R() * 160, k, R() * 1.4 - .7); }
+      // glass frequencies among the mirrors and the liquid glass
+      glassT -= dt; if (glassT <= 0){ glassT = 1.5 + R() * 3.5; const k = gardK + lakeK * .35; if (k > .15) bell(2400 + R() * 3600, .5 * k, R() * 1.6 - .8, 2 + R() * 1.5, .7, .3); }
+      // light pulses: faint electronic frequencies
+      blipT -= dt; if (blipT <= 0){ blipT = .9 + R() * 2.6; const k = passK + hallK * .3; if (k > .2) blip([1318, 1567, 1975, 2637][Math.floor(R() * 4)], R() * 1.4 - .7); }
+      // moments of near silence, to make the dream hold its breath
+      gapT -= dt; if (gapT <= 0){ gapT = 30 + R() * 40; if (endK < .3){ breath.gain.cancelScheduledValues(t); breath.gain.setValueAtTime(breath.gain.value, t); breath.gain.linearRampToValueAtTime(.12, t + 2.2); breath.gain.setValueAtTime(.12, t + 5); breath.gain.linearRampToValueAtTime(1, t + 8.5); } }
+    },
+    clink(p, k){ if (!ctx || !on) return; for (let i = 0; i < 2 + Math.round(k * 3); i++) setTimeout(() => bell(1800 + R() * 2600, .3 + k * .5, p, .5 + R() * .6, .4, .2), i * (30 + R() * 60)); },
+    drip(p){ if (!ctx || !on) return; drip(p, 1, .3); },
+    ripple(p, k){ if (!ctx || !on) return; drip(p, .5 * k, .35); if (R() < .3 * k) grain(300 + R() * 500, .2, .03 * k, p, .5); },
+    pulse(p, k = 1){ if (!ctx || !on) return; const t = T(), o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.setValueAtTime(88, t); o.frequency.exponentialRampToValueAtTime(44, t + .4); env(g, t, .01, .2 * k, .9); o.connect(g); voice(g, p, .5, .2); o.start(t); o.stop(t + 1); blip(880 + R() * 440, -p); },
+    glass(p, k = 1){ if (!ctx || !on) return; for (let i = 0; i < 4; i++) setTimeout(() => bell(1800 + R() * 3800, .55 * k, p + (R() - .5) * .4, 1.8 + R(), .7, .3), i * 70); },
+  };
+})();
+
+
+/* ================================ THE DRIFT ================================ */
+const mouse = { x: 0, y: 0, sx: 0, sy: 0, v: 0, px: 0, py: 0 };
+addEventListener('pointermove', e => { const x = e.clientX / innerWidth * 2 - 1, y = -(e.clientY / innerHeight * 2 - 1); mouse.v = Math.min(3, mouse.v + Math.hypot(x - mouse.px, y - mouse.py) * 8); mouse.px = x; mouse.py = y; mouse.x = x; mouse.y = y; }, { passive: true });
+let started = false, push = 0, camZ = 7, vel = 0;
+// the dream moves on by itself, at its own pace: slow among the chains, slower still before the swan, quicker in the passage, lingering in the garden
+const PACE = [[7, 3.4], [-58, 3], [-78, 2.6], [-95, 2.3], [-112, 2], [-135, 2.2], [-150, 2.2], [-250, 2.2], [-290, 1.8], [-330, 2.6], [-380, 2.4], [-408, 1.2]];
+function pace(z){ for (let i = 0; i < PACE.length - 1; i++){ const a = PACE[i], b = PACE[i + 1]; if (z <= a[0] && z >= b[0]) return lerp(a[1], b[1], smooth(a[0], b[0], z)); } return .8; }
+addEventListener('wheel', e => { push = Math.max(-3, Math.min(6, push + e.deltaY * .004)); }, { passive: true });
+let ty = null; addEventListener('touchstart', e => ty = e.touches[0].clientY, { passive: true });
+addEventListener('touchmove', e => { if (ty === null) return; const d = ty - e.touches[0].clientY; ty = e.touches[0].clientY; push = Math.max(-3, Math.min(6, push + d * .015)); }, { passive: true });
+addEventListener('keydown', e => { if (e.key === 'ArrowDown' || e.key === ' ' || e.key === 'PageDown') push = Math.min(6, push + 1.5); if (e.key === 'ArrowUp' || e.key === 'PageUp') push = Math.max(-3, push - 1.5); if (e.key === 'm' || e.key === 'M') toggleSound(); });
+// the cursor touches the water: ripples where it points on the surface
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), waterPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hitP = new THREE.Vector3(); let lastRip = 0;
+const tmp = new THREE.Vector3(), look = new THREE.Vector3(), progEl = $('#prog i');
+// colour and air along the dream: crimson black → red → dusty rose → burgundy garden → blush → ivory
+const PAL = [[7, .1, .012, .024, .032], [-110, .13, .012, .02, .02], [-145, .12, .012, .02, .02], [-200, .22, .03, .05, .017], [-280, .5, .2, .24, .016], [-302, .14, .025, .05, .02], [-392, .18, .03, .05, .018], [-408, .3, .02, .04, .03]];
+function palette(z, out){ for (let i = 0; i < PAL.length - 1; i++){ const a = PAL[i], b = PAL[i + 1]; if (z <= a[0] && z >= b[0]){ const k = smooth(0, 1, (a[0] - z) / (a[0] - b[0])); out.setRGB(lerp(a[1], b[1], k), lerp(a[2], b[2], k), lerp(a[3], b[3], k)); return lerp(a[4], b[4], k); } }
+  const l = PAL[PAL.length - 1]; out.setRGB(l[1], l[2], l[3]); return l[4]; }
+let endT = 0, loopT = -99, lastFrameIdx = 99;
+let lastT = now(), slow = 0, q = 0, frameN = 0;
+function frame(){
+  requestAnimationFrame(frame);
+  const t = now(), raw = t - lastT, dt = Math.min(.05, raw); lastT = t; frameN++;
+  slow = raw > .026 ? slow + raw : Math.max(0, slow - raw * .5); if (slow > 2.5 && q < 2){ slow = 0; q++; renderer.setPixelRatio(q === 1 ? 1 : .75); if (q === 2) bloom.enabled = false; composer.setSize(innerWidth, innerHeight); }
+  mouse.sx += (mouse.x - mouse.sx) * .04; mouse.sy += (mouse.y - mouse.sy) * .04; mouse.v *= Math.pow(.12, dt);
+  // a slow, weighted drift: scroll pushes, the dream eases; left alone it still breathes forward a little
+  push *= Math.pow(.5, dt); const target = started ? pace(camZ) + push * (reduced ? .5 : 1) : 0; vel = lerp(vel, target, 1 - Math.exp(-dt * 1.1)); camZ = Math.min(7, Math.max(Z_END, camZ - vel * dt));
+  const P = clamp01((7 - camZ) / (7 - Z_END)); progEl.style.width = (P * 100) + '%';
+  const hallK = 1 - smooth(-80, -104, camZ), lakeK = smooth(-84, -112, camZ);
+  // the camera: low over the liquid, drifting, looking ahead; it lifts its gaze to the chains, lowers it to the lake
+  const sway = Math.sin(t * .17) * .35 + mouse.sx * 1.1, y = lerp(1.75, 1.45, lakeK) + Math.sin(t * .23) * .06 - mouse.sy * .25;
+  camera.position.set(sway, y, camZ);
+  look.set(sway * .5 + mouse.sx * 2, lerp(3.2, 1.6, lakeK) + mouse.sy * 1.2, camZ - 12); camera.lookAt(look); camera.rotateZ(Math.sin(t * .11) * .008 - mouse.sx * .015);
+  // the dream changes colour as it goes: crimson black → saturated red and dusty rose on the lake
+  scene.fog.density = palette(camZ, scene.fog.color); scene.background.copy(scene.fog.color); if (WU.uFogC){ WU.uFogC.value.copy(scene.fog.color); WU.uFogD.value = scene.fog.density; }
+  mists.forEach((m, i) => { m.uniforms.uT.value = t; m.uniforms.uC.value.setRGB(1, lerp(.3, .5, lakeK), lerp(.32, .55, lakeK)); });
+  silkU.uT.value = t; WU.uT.value = t; WU.uLake.value = lakeK; film.uniforms.uT.value = t;
+  // the hall dissolves behind the opening; the silk thins out; the light at the opening blooms then dissolves into the lake's air
+  dissolveU.uDis.value = smooth(-78, -102, camZ); openLight.intensity = 160 * (1 - lakeK) + 20; glowPlane.material.opacity = .9 * (1 - smooth(-58, -80, camZ)); glowPlane.visible = glowPlane.material.opacity > .01;
+  redKey.intensity = 900 * hallK;
+  for (const s of silks){ const u = s.userData.u; const d = Math.abs(s.position.z - camZ);
+    if (s.userData.veil){ u.uPart.value = smooth(18, 4, s.position.z - camZ < 0 ? 0 : s.position.z - camZ) * 0 + smooth(-36, -48, camZ); u.uStretch.value = u.uPart.value * .6; }   // the veil parts as the visitor comes
+    u.uAmp.value = 1 + mouse.v * .4 * Math.exp(-d * .08); s.material.opacity = (s.userData.op ?? (s.userData.op = s.material.opacity)) * hallK; s.visible = hallK > .01; }
+  // the chains: pendulums; they part before the visitor; the cursor sends them swinging; near the opening they melt into liquid strands
+  ndc.set(mouse.x, mouse.y); ray.setFromCamera(ndc, camera);
+  for (const c of chains){
+    const dz = c.z - camZ, near = Math.exp(-Math.pow(dz + 3, 2) / 30);
+    const part = Math.sign(c.x || 1) * near * .35;                                        // they move apart as the camera comes
+    tmp.set(c.x, 9, c.z).project(camera); const sx = tmp.x - mouse.x, sy = tmp.y - mouse.y, hit = tmp.z < 1 && Math.abs(sx) < .12 && Math.abs(sy) < .9 ? (1 - Math.abs(sx) / .12) : 0;
+    if (hit > 0 && mouse.v > .25){ c.vx += (mouse.x - mouse.px) * 0 + Math.sign(-sx || 1) * mouse.v * hit * .6 * dt * 10; c.vz += (Math.random() - .5) * mouse.v * hit * .3; if (Math.random() < .08 * mouse.v) Sound.clink(tmp.x, Math.min(1, mouse.v / 2)); }
+    c.vx += (-(c.az - part) * 2.2 - c.vx * .5) * dt; c.vz += (-c.ax * 2.2 - c.vz * .5) * dt; c.az += c.vx * dt; c.ax += c.vz * dt;
+    c.pivot.rotation.set(c.ax + Math.sin(t * .4 + c.ph) * .01, 0, c.az + Math.sin(t * .33 + c.ph) * .015);
+    // melt
+    c.melt = lerp(c.melt, smooth(-50, -76, camZ) * smooth(-30, -70, c.z) + smooth(-66, -86, camZ), .03); const m = Math.min(1, c.melt);
+    c.im.scale.set(1 - m, 1, 1 - m); c.im.visible = m < .98; c.strand.scale.set(.001 + m, 1 + m * .1, .001 + m); c.strand.material = chrome;
+    c.pivot.visible = hallK > .02 || m > .02;
+    if (m > .6){ c.dropT -= dt; c.drop.visible = true; const fall = clamp01(1 - c.dropT / 1.2); c.drop.position.y = -c.len - fall * fall * (17 - c.len); c.drop.scale.set(1 - fall * .3, 1 + fall * 1.4, 1 - fall * .3);
+      if (c.dropT <= 0){ c.dropT = 1.2 + Math.random() * 2.6; c.pivot.getWorldPosition(tmp); ripple(tmp.x, tmp.z, .9); tmp.project(camera); Sound.drip(tmp.x); } }
+  }
+  // the swan: it glides away, slowly; its wake writes silver rings; its reflection begins to stretch
+  if (lakeK > 0 || camZ < -60){ swanZ = Math.max(-133, swanZ - dt * .05); swanX = lerp(.6 + Math.sin(t * .05) * .8, 4.2, smooth(-108, -124, camZ)); swan.position.set(swanX, .02 + Math.sin(t * .8) * .02, swanZ); swan.rotation.y = Math.PI + Math.sin(t * .05) * .25;
+    swanBody.rotation.z = Math.sin(t * .7) * .02; if (frameN % 2 === 0) neckPose(t);
+    wakeT -= dt; if (wakeT <= 0){ wakeT = 1.4; ripple(swanX, swanZ + 1.2, .45); }
+    swanLight.position.set(swanX - 3, 5, swanZ + 6); WU.uSwan.value.set(swanX, 0, swanZ); WU.uStretch.value = smooth(-120, -170, camZ); }
+  swan.visible = camZ < -55;
+  // ---------- III · the passage: frames rise from the ripples, lose their logic, melt into silver ----------
+  const passK = smooth(-136, -166, camZ) * (1 - smooth(-280, -300, camZ)), gardK = smooth(-288, -305, camZ) * (1 - smooth(-395, -412, camZ)), disK = smooth(-395, -425, camZ);
+  const distort = smooth(-175, -220, camZ) * (1 - smooth(-276, -292, camZ)), melt = smooth(-272, -298, camZ);
+  for (const f of frames){ const dz = camZ - f.z, rise = reduced ? 1 : smooth(52, 18, dz);
+    f.mesh.visible = camZ < -96 && melt < .99; if (!f.mesh.visible) continue;
+    if (rise > .15 && !f.rose){ f.rose = true; ripple(-4.2, f.z, 1); ripple(4.2, f.z, 1); Sound.pulse(0, .6); }
+    const dk = distort * smooth(3, 12, Math.abs(dz)), fm = clamp01(melt * 1.15 - (f.i % 5) * .03);   // calm when close; each frame melts in its own time
+    f.mesh.position.set(Math.sin(t * .21 + f.ph) * 1.4 * dk, lerp(-14, 0, rise) - fm * fm * 15, f.z);
+    f.mesh.scale.set(1 + dk * .32 * Math.sin(t * .37 + f.ph), 1 + dk * .26 * Math.sin(t * .29 + f.ph * 1.7), 1); f.mesh.rotation.z = dk * .12 * Math.sin(t * .23 + f.ph);
+    f.u.uMelt.value = fm; f.u.uT.value = t; }
+  { const idx = Math.floor((Z_PASS0 - camZ) / FRAME_STEP); if (idx !== lastFrameIdx && idx >= 0 && idx < NFRAMES && passK > .3){ lastFrameIdx = idx; Sound.pulse(idx % 2 ? .5 : -.5, .9); } }
+  ribU.uT.value = t; const reveal = clamp01((-camZ - 266) / 80);
+  ribbons.forEach(r => { r.visible = camZ < -238 && camZ > -425; r.geometry.setDrawRange(0, Math.floor(r.geometry.index.count * reveal / 6) * 6); });
+   swan.visible = camZ < -55 && camZ > -215;
+  // ---------- IV · the mirror garden: the mirrors show other dreams; near them the fragments part and float up ----------
+  garden.visible = camZ < -282 && camZ > -430;
+  if (garden.visible){ lilies.forEach(l => { l.g.rotation.z = Math.sin(t * .5 + l.ph) * .06; });
+    renderer.getDrawingBufferSize(mirrorMat.uniforms.uRes.value); mirrorMat.uniforms.uT.value = t; mirrorMat.uniforms.uOff.value.set(mouse.sx * .05, mouse.sy * .03); mirrorMat.uniforms.uFade.value = 1 - smooth(-398, -418, camZ); edgeMat.opacity = .8 * mirrorMat.uniforms.uFade.value;
+    for (const m of mirrors){ const dz = camZ - m.z, want = Math.max(smooth(12, 1, dz), smooth(-392, -410, camZ)); const prev = m.lift; m.lift = lerp(m.lift, want, .02);
+      if (prev < .08 && m.lift >= .08) Sound.glass((m.g.position.x > 0 ? .6 : -.6), 1);
+      for (const f of m.frags){ const L = m.lift; f.fr.position.set(f.ox * L * .25, L * f.vy * 7 + Math.sin(t * .5 + f.vy * 9) * .05 * L, L * .6); f.fr.rotation.set(L * f.rx, 0, L * f.rz); } }
+    if (frameN % 2 === 0){ dreamCam.quaternion.copy(camera.quaternion); dreamCam.position.set(camera.position.x * .3 + mouse.sx * 4, 3 + mouse.sy * 2, -20 + (camZ + 300) * .25); dreamCam.aspect = camera.aspect; dreamCam.updateProjectionMatrix();
+      renderer.setRenderTarget(dreamRT); renderer.render(dreamScene, dreamCam); renderer.setRenderTarget(null); } }
+  // ---------- V · the dissolution: membranes, soft silver sculptures, brighter and brighter, a pink glow; then it may begin again ----------
+  const pale = 0; WU.uPal.value = pale; renderer.toneMappingExposure = .95 + pale * .35;
+  { const want = null; if (want && scene.environment !== want){ scene.__darkEnv = scene.__darkEnv || scene.environment; scene.environment = want; } if (!want && scene.__darkEnv && scene.environment !== scene.__darkEnv) scene.environment = scene.__darkEnv; }
+  membranes.forEach((m, i) => { m.visible = false; m.material.opacity = .5 * smooth(-390, -412, camZ); m.userData.u.uAmp.value = 1.4 + mouse.v * .3; m.rotation.y += Math.sin(t * .05 + i) * .0005; });
+  sculpts.forEach((s2, i) => { s2.visible = false; s2.rotation.y = t * .03 + i; s2.position.y += Math.sin(t * .3 + i) * .002; }); sculptU.uT.value = t + mouse.sx * .8;
+  mists.forEach(m => m.uniforms.uC.value.lerp(new THREE.Color(1, .82, .82), pale * .5));
+  let glow = smooth(-388, -408, camZ);
+  if (camZ <= Z_END + .3){ endT += dt; if (endT > 7){ endT = 0; loopT = t; camZ = 7; vel = 0; push = 0; swanZ = -128; frames.forEach(f => f.rose = false); mirrors.forEach(m => m.lift = 0); chains.forEach(c => { c.melt = 0; c.dropT = Math.random() * 3; c.drop.visible = false; }); } } else endT = 0;
+  if (t - loopT < 4) glow = Math.max(glow, 1 - smooth(0, 4, t - loopT));            // the dream begins again, out of the pink glow
+  glowEl.style.opacity = glow;
+  // the last image: the title, slowly appearing in the crimson glow; it fades as the dream begins again
+  { const k = camZ <= Z_END + 2 ? smooth(.5, 3, endT) : 0, back = t - loopT < 3 ? 1 - smooth(0, 2.5, t - loopT) : 0, o = Math.max(k, back); endTitle.style.opacity = o; endTitle.style.setProperty('--k', o); }
+  swanHall.visible = camZ < -84 && camZ > -292; if (swanHall.visible){ glassU.uT.value = t; drapeMat.uniforms.uT.value = t; const f = smooth(-84, -122, camZ) * (1 - smooth(-262, -288, camZ)); hallFade.value = f; archMat.opacity = f; hallGlow.material.opacity = f * (1 - .7 * smooth(-120, -145, camZ)); glassArcs.forEach(m => { const c0 = Math.min(m.userData.z + 58, -86), r = reduced ? 1 : smooth(c0, c0 - 34, camZ); m.position.y = lerp(-24, 0, r * r * (3 - 2 * r)); }); hallLight.intensity = 320 * f * smooth(-92, -124, camZ) * (1 - .85 * smooth(-118, -140, camZ)); }
+  lookAt(camZ, t);
+  // the cursor's touch on the water
+  if (ray.ray.intersectPlane(waterPlane, hitP) && mouse.v > .35 && t - lastRip > .25 && hitP.distanceTo(camera.position) < 40){ lastRip = t; ripple(hitP.x, hitP.z, Math.min(1, mouse.v * .5)); if (lakeK > .3) Sound.drip(mouse.x * .8); }
+  { const endK = smooth(-372, -404, camZ), refl = Math.max(hallK * .8, smooth(-95, -110, camZ) * (1 - smooth(-280, -300, camZ)) * .9, gardK * .7), fade = camZ <= Z_END + .3 ? 1 - smooth(2, 6.5, endT) : (t - loopT < 4 ? smooth(0, 4, t - loopT) : 1);
+    Sound.frame(hallK, lakeK * (1 - passK), Math.min(1, mouse.v * .5), passK, gardK, endK, vel, mouse.sx + Math.sin(t * .17) * .3, refl, fade); }
+  composer.render();
+}
+if (false) window.__rd = { go: z => { camZ = z; }, get z(){ return camZ; }, scene, mirrors, garden };
+frame();
+
+/* ================================ GATE & SOUND ================================ */
+const sndBtn = $('#snd');
+function ui(){ sndBtn.textContent = Sound.on ? 'Sound on' : 'Sound off'; sndBtn.setAttribute('aria-pressed', String(Sound.on)); }
+async function toggleSound(){ await Sound.set(!Sound.on); ui(); }
+sndBtn.addEventListener('click', toggleSound);
+$('#enter').addEventListener('click', async () => { $('#gate').classList.add('is-gone'); started = true; sndBtn.classList.add('is-on'); $('#prog').classList.add('is-on'); await Sound.set(true); ui();
+  $('#st').textContent = 'The dream begins and carries you forward; move the cursor to disturb the chains and the water.'; });
+</script>
+</body>
+</html>
